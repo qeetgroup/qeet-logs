@@ -1,0 +1,85 @@
+# Local development infrastructure for qeet-logs.
+# Ports are offset from qeet-id (:4001) and qeet-notify (5433/4222/6379/8080/3010)
+# so all three stacks can run side by side.
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3-alpine
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: qeet_logs
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9100:9000"   # native protocol
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - chdata:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qeet-logs
+      POSTGRES_PASSWORD: qeet-logs
+      POSTGRES_DB: qeet-logs
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qeet-logs"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  nats:
+    image: nats:2.10-alpine
+    restart: unless-stopped
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4223:4222"   # client
+      - "8223:8222"   # monitoring
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6380:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Cold/archive tier object storage — wired in Phase 2 (Module 3.5).
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: qeet-logs
+      MINIO_ROOT_PASSWORD: qeet-logs123
+    ports:
+      - "9002:9000"   # S3 API
+      - "9003:9001"   # console
+    volumes:
+      - miniodata:/data
+
+volumes:
+  chdata:
+  pgdata:
+  redisdata:
+  miniodata:

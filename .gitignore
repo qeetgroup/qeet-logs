@@ -1,0 +1,25 @@
+# Go
+/bin/
+*.test
+*.out
+
+# Rust
+/ingest/target/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+
+# Env & secrets — never commit
+.env
+.env.local
+.env.*.local
+*.pem
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
