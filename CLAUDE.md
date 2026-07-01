@@ -17,7 +17,8 @@ make ch-migrate    # Apply ClickHouse DDL (clickhouse/migrations/*.sql) — M1+
 
 make dev           # Run query API (cmd/query) on :8100
 make dev-ingest    # Run Rust ingest gateway (needs Rust toolchain) — M2
-make dev-console   # Next.js console on :3020 — M7
+make dev-alerter   # Run alerter engine (cmd/alerter) — M6
+make dev-console   # TanStack Start console on :3020 — M7 (cd apps/console && pnpm dev)
 
 make build         # Build all Go binaries to bin/
 make test          # Go unit tests (go vet + go test -race)
@@ -32,7 +33,7 @@ make lint fmt      # golangci-lint / go fmt
 
 Polyglot: **Rust** for the hot ingest path, **Go** for query/API/alerting, **ClickHouse** for log
 storage, **Postgres** for metadata, **NATS JetStream** as the ingestion bus, **Redis** for live-tail
-fan-out + rate limits, **Next.js + @qeetrix/ui** console.
+fan-out + rate limits, **TanStack Start + @qeetrix/ui** console.
 
 ```
 cmd/
@@ -60,10 +61,10 @@ platform/                 Shared infrastructure (no business logic)
 
 migrations/               Postgres golang-migrate pairs (NNNN_*.up/down.sql, immutable)
 clickhouse/migrations/    ClickHouse DDL (logs table, TTL, auth_events) — M1
-apps/console/             Next.js 16 + @qeetrix/ui (:3020) — M7
-sdk/go/                   Public Go SDK — M8
-api/openapi/              OpenAPI 3.1 spec — M9
-deploy/                   docker-compose + Caddyfile (+ Helm) — M9
+apps/console/             TanStack Start + @qeetrix/ui (:3020) — M7 (pnpm, Node 24, .nvmrc)
+sdk/go/                   Public Go SDK (separate module: github.com/qeetgroup/qeet-logs/sdk/go) — M9
+api/openapi/              OpenAPI 3.1 spec (all ingest + query + admin endpoints) — M9
+deploy/                   docker-compose + Caddyfile + Helm chart + SOC2-CONTROLS.md — M9
 ```
 
 ## Key conventions
@@ -89,7 +90,7 @@ deploy/                   docker-compose + Caddyfile (+ Helm) — M9
 |---|---|
 | query API (cmd/query) | 8100 |
 | ingest gateway (Rust) | 8101 + 4318 (OTLP) |
-| Next.js console | 3020 |
+| TanStack Start console | 3020 |
 | ClickHouse | 8123 (HTTP) / 9100 (native) |
 | PostgreSQL 17 | 5434 |
 | NATS | 4223 / 8223 (monitor) |
@@ -98,6 +99,11 @@ deploy/                   docker-compose + Caddyfile (+ Helm) — M9
 
 ## Build status / roadmap
 
-Building the PRD's **Phase 1 (MVP)** in milestones M0–M9 (see `~/.claude/plans/` plan). M0 = repo
-scaffold + local infra + health/readiness. Phase 2 (PII ML, Qeet ID auth-event stream, GDPR erasure)
-and Phase 3 (anomaly detection, NLQ, self-hosted) are explicitly out of scope for now.
+Building the PRD's **Phase 1 (MVP)** in milestones M0–M9. **ALL MILESTONES COMPLETE (M0–M9)**:
+- M0–M5: foundation, ingest, query, OIDC/RLS, API keys
+- M6: alerter binary (`cmd/alerter`) + threshold/absence engine (`domains/alerting/`) + migration 0005
+- M7: TanStack Start console (`apps/console/`) — 9 routes, pnpm/Node 24, dev server :3020
+- M8: Dashboards CRUD (`handler/dashboards.go`) + Saved Searches (`handler/saved_searches.go`) + console routes
+- M9: DLQ table (migration 0006) + DLQ replay API + quota usage API + Go SDK (`sdk/go/`) + OpenAPI 3.1 spec (`api/openapi/openapi.yaml`) + Helm chart (`deploy/helm/`) + SOC 2 control mapping (`deploy/SOC2-CONTROLS.md`)
+
+Phase 2 (PII ML, GDPR erasure) and Phase 3 (anomaly detection, NLQ, self-hosted) out of scope.

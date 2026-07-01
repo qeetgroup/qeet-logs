@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "qeet-logs.fullname" . }}-alerter
+  labels:
+    {{- include "qeet-logs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: alerter
+spec:
+  replicas: {{ .Values.alerter.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "qeet-logs.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: alerter
+  template:
+    metadata:
+      labels:
+        {{- include "qeet-logs.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: alerter
+    spec:
+      containers:
+        - name: alerter
+          image: "{{ .Values.alerter.image.repository }}:{{ .Values.alerter.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.alerter.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "qeet-logs.fullname" . }}
+            - secretRef:
+                name: {{ .Values.secrets.existingSecret }}
+          resources:
+            {{- toYaml .Values.alerter.resources | nindent 12 }}

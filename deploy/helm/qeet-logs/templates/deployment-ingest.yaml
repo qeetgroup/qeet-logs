@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "qeet-logs.fullname" . }}-ingest
+  labels:
+    {{- include "qeet-logs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingest
+spec:
+  replicas: {{ .Values.ingest.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "qeet-logs.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ingest
+  template:
+    metadata:
+      labels:
+        {{- include "qeet-logs.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: ingest
+    spec:
+      containers:
+        - name: ingest
+          image: "{{ .Values.ingest.image.repository }}:{{ .Values.ingest.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.ingest.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ingest.service.httpPort }}
+              protocol: TCP
+            - name: otlp
+              containerPort: {{ .Values.ingest.service.otlpPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "qeet-logs.fullname" . }}
+            - secretRef:
+                name: {{ .Values.secrets.existingSecret }}
+          resources:
+            {{- toYaml .Values.ingest.resources | nindent 12 }}

@@ -1,0 +1,126 @@
+# Default values for qeet-logs.
+# Override with -f <values-file> or --set on helm install.
+
+global:
+  imageRegistry: ghcr.io/qeetgroup
+
+# ─── Query API ────────────────────────────────────────────────────────────────
+query:
+  image:
+    repository: ghcr.io/qeetgroup/qeet-logs-query
+    tag: ""  # defaults to .Chart.AppVersion
+    pullPolicy: IfNotPresent
+
+  replicaCount: 2
+
+  service:
+    type: ClusterIP
+    port: 8100
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+  env:
+    ENV: production
+    HTTP_PORT: "8100"
+    # Secrets referenced from a Kubernetes Secret named `qeet-logs-secrets`
+    # DATABASE_URL, REDIS_URL, NATS_URL, CLICKHOUSE_URL, etc.
+
+# ─── Alerter ──────────────────────────────────────────────────────────────────
+alerter:
+  image:
+    repository: ghcr.io/qeetgroup/qeet-logs-alerter
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1  # singleton — only one alerter should run
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# ─── Ingest Gateway (Rust) ────────────────────────────────────────────────────
+ingest:
+  image:
+    repository: ghcr.io/qeetgroup/qeet-logs-ingest
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  replicaCount: 3
+
+  service:
+    type: ClusterIP
+    httpPort: 8101
+    otlpPort: 4318
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 60
+
+# ─── Ingress ──────────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: api.logs.qeet.in
+      paths:
+        - path: /
+          pathType: Prefix
+          backend: query
+    - host: ingest.logs.qeet.in
+      paths:
+        - path: /
+          pathType: Prefix
+          backend: ingest
+  tls:
+    - secretName: qeet-logs-tls
+      hosts:
+        - api.logs.qeet.in
+        - ingest.logs.qeet.in
+
+# ─── Secrets (populated externally — do not put real values here) ─────────────
+secrets:
+  existingSecret: qeet-logs-secrets
+  # Keys expected in the secret:
+  #   DATABASE_URL
+  #   REDIS_URL
+  #   NATS_URL
+  #   CLICKHOUSE_URL
+  #   CLICKHOUSE_DATABASE
+  #   CLICKHOUSE_USER
+  #   CLICKHOUSE_PASSWORD
+  #   QEET_ID_ISSUER
+  #   NOTIFY_URL          (optional — Qeet Notify for alerter delivery)
+  #   NOTIFY_KEY          (optional)
+
+# ─── ConfigMap ────────────────────────────────────────────────────────────────
+config:
+  env: production
+  clickhouseDatabase: qeet_logs

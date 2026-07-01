@@ -88,6 +88,49 @@ func main() {
 		rt.Get("/auth-events", handler.AuthEvents(ch, pool))
 	})
 
+	// Admin API — accepts an API key with logs:admin OR a Qeet ID Bearer JWT.
+	r.Route("/v1/admin", func(rt chi.Router) {
+		rt.Use(apimw.AnyAuth(pool, cfg.QeetIDIssuer))
+		rt.Use(apimw.RequireScope("logs:admin"))
+
+		// API key CRUD
+		rt.Post("/api-keys", handler.CreateAPIKey(pool))
+		rt.Get("/api-keys", handler.ListAPIKeys(pool))
+		rt.Delete("/api-keys/{id}", handler.RevokeAPIKey(pool))
+
+		// Alert rules CRUD (M6)
+		rt.Get("/alert-rules", handler.ListAlertRules(pool))
+		rt.Post("/alert-rules", handler.CreateAlertRule(pool))
+		rt.Delete("/alert-rules/{id}", handler.DeleteAlertRule(pool))
+
+		// Retention config (M6)
+		rt.Get("/retention", handler.GetRetention(pool))
+		rt.Put("/retention", handler.UpdateRetention(pool))
+
+		// Audit log (M6)
+		rt.Get("/audit", handler.ListAudit(pool))
+
+		// Dashboards CRUD (M8)
+		rt.Get("/dashboards", handler.ListDashboards(pool))
+		rt.Post("/dashboards", handler.CreateDashboard(pool))
+		rt.Get("/dashboards/{id}", handler.GetDashboard(pool))
+		rt.Put("/dashboards/{id}", handler.UpdateDashboard(pool))
+		rt.Delete("/dashboards/{id}", handler.DeleteDashboard(pool))
+
+		// Saved searches CRUD (M8)
+		rt.Get("/saved-searches", handler.ListSavedSearches(pool))
+		rt.Post("/saved-searches", handler.CreateSavedSearch(pool))
+		rt.Delete("/saved-searches/{id}", handler.DeleteSavedSearch(pool))
+
+		// DLQ replay API (M9)
+		rt.Get("/dlq", handler.ListDLQ(pool))
+		rt.Post("/dlq/{id}/replay", handler.ReplayDLQ(pool, nc.Conn))
+		rt.Delete("/dlq/{id}", handler.DropDLQ(pool))
+
+		// Quota usage (M9)
+		rt.Get("/quota/usage", handler.QuotaUsage(ch, pool))
+	})
+
 	srv := &http.Server{
 		Addr:         ":" + cfg.HTTPPort,
 		Handler:      r,

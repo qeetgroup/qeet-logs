@@ -1,0 +1,14 @@
+apiVersion: v2
+name: qeet-logs
+description: Qeet Logs — privacy-first, multi-tenant structured log management platform
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - logging
+  - observability
+  - qeet
+home: https://qeet.in
+maintainers:
+  - name: Qeet Group
+    url: https://qeet.in

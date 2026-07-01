@@ -13,7 +13,7 @@ GIT_SHA    := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -X main.version=$(GIT_SHA) -X main.buildTime=$(BUILD_TIME)
 
-.PHONY: help install build dev dev-ingest dev-console test test-integration \
+.PHONY: help install build dev dev-ingest dev-console dev-alerter test test-integration \
         lint fmt vet infra-up infra-down db-reset db-psql \
         migrate-up migrate-down migrate-version ch-migrate seed clean kill
 
@@ -22,7 +22,7 @@ help: ## Show this help
 
 install: ## Install Go deps + console JS deps
 	$(GO) mod tidy
-	@if [ -d apps/console ]; then cd apps/console && pnpm install; fi
+	@if [ -d apps/console ]; then cd apps/console && npm install; fi
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
@@ -38,8 +38,11 @@ dev: ## Run the query API (cmd/query) on :8100
 dev-ingest: ## Run the Rust ingest gateway (requires Rust toolchain)
 	cd ingest && cargo run --bin qeet-logs-gateway
 
-dev-console: ## Start the Next.js console on :3020
-	cd apps/console && pnpm dev
+dev-alerter: ## Run the alerter engine (cmd/alerter)
+	DATABASE_URL="$(DB_URL)" $(GO) run ./cmd/alerter/
+
+dev-console: ## Start the TanStack Start console on :3020
+	cd apps/console && npm run dev
 
 # ── Test ─────────────────────────────────────────────────────────────────────
 

@@ -1,0 +1,9 @@
+ALTER TABLE audit_log
+    DROP COLUMN IF EXISTS user_agent,
+    DROP COLUMN IF EXISTS ip,
+    DROP COLUMN IF EXISTS status,
+    DROP COLUMN IF EXISTS resource_id,
+    DROP COLUMN IF EXISTS resource,
+    DROP COLUMN IF EXISTS actor;
+
+DROP TABLE IF EXISTS alert_state;

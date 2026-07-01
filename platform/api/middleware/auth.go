@@ -32,7 +32,8 @@ func APIKeyAuth(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				writeError(w, http.StatusUnauthorized, "missing X-Qeet-Api-Key")
 				return
 			}
-			ak, ok, err := database.LookupAPIKey(r.Context(), pool, security.HashAPIKey(key))
+			hash := security.HashAPIKey(key)
+			ak, ok, err := database.LookupAPIKey(r.Context(), pool, hash)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "auth lookup failed")
 				return
@@ -41,6 +42,7 @@ func APIKeyAuth(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				writeError(w, http.StatusUnauthorized, "invalid api key")
 				return
 			}
+			go database.TouchLastUsed(context.Background(), pool, hash)
 			ctx := context.WithValue(r.Context(), ctxTenant, ak.TenantID)
 			ctx = context.WithValue(ctx, ctxScopes, ak.Scopes)
 			next.ServeHTTP(w, r.WithContext(ctx))
