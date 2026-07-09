@@ -18,6 +18,8 @@ async-nats = { workspace = true }
 redis = { workspace = true }
 deadpool-postgres = { workspace = true }
 tokio-postgres = { workspace = true }
+prost = { workspace = true }
+snap = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 tracing = { workspace = true }

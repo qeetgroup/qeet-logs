@@ -1,0 +1,83 @@
+{{- if .Values.collector.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "qeet-logs.fullname" . }}-collector
+  labels:
+    {{- include "qeet-logs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      filelog:
+        include:
+          - /var/log/pods/*/*/*.log
+        exclude:
+          - /var/log/pods/*/otel-collector/*.log
+        include_file_path: true
+        start_at: end
+        operators:
+          - type: container
+            id: container-parser
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.pod.name
+            - k8s.node.name
+            - k8s.deployment.name
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.ip
+          - sources:
+              - from: connection
+      resourcedetection:
+        detectors: [env, system]
+        timeout: 5s
+        override: false
+      batch:
+        send_batch_size: 512
+        timeout: 2s
+    exporters:
+      otlphttp:
+        endpoint: ${env:QEET_LOGS_ENDPOINT}
+        headers:
+          X-Qeet-Api-Key: ${env:QEET_LOGS_API_KEY}
+        compression: gzip
+        retry_on_failure:
+          enabled: true
+        sending_queue:
+          enabled: true
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    service:
+      extensions: [health_check]
+      pipelines:
+        logs:
+          receivers: [otlp, filelog]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [otlphttp]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [otlphttp]
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [otlphttp]
+{{- end }}

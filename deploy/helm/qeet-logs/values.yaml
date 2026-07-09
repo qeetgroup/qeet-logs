@@ -82,6 +82,25 @@ ingest:
     maxReplicas: 20
     targetCPUUtilizationPercentage: 60
 
+# ─── OTel Collector DaemonSet (K8s auto-discovery — PRD Module 01.3 / 04.1) ────
+# The power-user / fleet ingestion path (disabled by default; the zero-config
+# SDKs pointing at the gateway are the default onboarding path). When enabled it
+# tails every pod log on each node and forwards logs/metrics/traces over OTLP to
+# the ingest gateway. Requires INGEST_API_KEY in the secret.
+collector:
+  enabled: false
+  image:
+    repository: ghcr.io/qeetgroup/qeet-logs-collector
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 # ─── Ingress ──────────────────────────────────────────────────────────────────
 ingress:
   enabled: true

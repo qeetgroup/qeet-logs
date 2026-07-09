@@ -1,0 +1,34 @@
+# Qeet Logs OpenTelemetry Collector distribution (PRD Module 04.1).
+#
+# We ship a CURATED, TESTED SUBSET of Collector components — not the full
+# Contrib distribution — per the Collector project's own guidance against
+# running untested components in production. Build with the OpenTelemetry
+# Collector Builder (ocb):
+#
+#   ocb --config deploy/otel-collector/builder-config.yaml
+#
+# This is the power-user / Kubernetes-fleet ingestion path. The default
+# onboarding path remains the zero-config SDKs (Module 01) pointing straight at
+# the ingest gateway — the Collector is the escape hatch, not the default.
+dist:
+  name: qeet-logs-collector
+  description: Qeet Logs curated OpenTelemetry Collector
+  output_path: ./bin
+  version: 0.1.0
+
+receivers:
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.110.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/filelogreceiver v0.110.0
+
+processors:
+  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.110.0
+  - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.110.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/processor/k8sattributesprocessor v0.110.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourcedetectionprocessor v0.110.0
+
+exporters:
+  - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.110.0
+  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.110.0
+
+extensions:
+  - gomod: go.opentelemetry.io/collector/extension/healthcheckextension v0.110.0

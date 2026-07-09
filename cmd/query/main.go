@@ -86,6 +86,38 @@ func main() {
 		rt.Get("/query", handler.Query(ch, pool))
 		rt.Get("/query/tail", handler.Tail(rdb))
 		rt.Get("/auth-events", handler.AuthEvents(ch, pool))
+
+		// Change-event ingestion + listing (Module 15.1)
+		rt.Post("/changes", handler.CreateChange(ch, pool))
+		rt.Get("/changes", handler.ListChanges(ch, pool))
+
+		// Service dependency & topology graph (Module 10)
+		rt.Get("/topology", handler.Topology(ch, pool))
+
+		// Unified Investigation Timeline (Module 09)
+		rt.Get("/timeline", handler.Timeline(ch, pool))
+
+		// Correlated incidents + low-severity feed (Module 13)
+		rt.Get("/incidents", handler.ListIncidents(pool))
+
+		// RCA structural retrieval (Module 11.1)
+		rt.Get("/rca", handler.RCA(ch, pool))
+
+		// Correlation-aware panel overlays (Module 22.2)
+		rt.Get("/overlays", handler.Overlays(ch, pool))
+	})
+
+	// Public, unauthenticated shared-dashboard read (Module 22.3) — seat-free.
+	r.Get("/shared/dashboards/{token}", handler.GetSharedDashboard(pool))
+
+	// Prometheus-compatible query API (PRD Module 02.2) — point a Grafana
+	// Prometheus data source here; auth via X-Qeet-Api-Key → tenant + scopes.
+	r.Route("/api/v1", func(rt chi.Router) {
+		rt.Use(apimw.APIKeyAuth(pool))
+		rt.Get("/query", handler.PromInstantQuery(ch, pool))
+		rt.Post("/query", handler.PromInstantQuery(ch, pool))
+		rt.Get("/query_range", handler.PromRangeQuery(ch, pool))
+		rt.Post("/query_range", handler.PromRangeQuery(ch, pool))
 	})
 
 	// Admin API — accepts an API key with logs:admin OR a Qeet ID Bearer JWT.
@@ -107,6 +139,10 @@ func main() {
 		rt.Get("/retention", handler.GetRetention(pool))
 		rt.Put("/retention", handler.UpdateRetention(pool))
 
+		// In-flight remap program (Module 04.2)
+		rt.Get("/transform", handler.GetTransform(pool))
+		rt.Put("/transform", handler.UpsertTransform(pool))
+
 		// Audit log (M6)
 		rt.Get("/audit", handler.ListAudit(pool))
 
@@ -116,6 +152,7 @@ func main() {
 		rt.Get("/dashboards/{id}", handler.GetDashboard(pool))
 		rt.Put("/dashboards/{id}", handler.UpdateDashboard(pool))
 		rt.Delete("/dashboards/{id}", handler.DeleteDashboard(pool))
+		rt.Post("/dashboards/{id}/share", handler.ShareDashboard(pool))
 
 		// Saved searches CRUD (M8)
 		rt.Get("/saved-searches", handler.ListSavedSearches(pool))

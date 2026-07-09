@@ -32,11 +32,28 @@ const levelArr = "['trace','debug','info','warn','error','fatal']"
 
 var logsColumns = set("id", "timestamp", "received_at", "tenant_id", "service", "environment",
 	"level", "message", "trace_id", "span_id", "user_linkage_key", "ingested_by",
-	"_retention_days", "body", "resource", "pii_detected")
+	"_retention_days", "body", "resource", "pii_detected",
+	"git_sha", "deploy_id", "pr_number", "k8s_namespace", "k8s_pod", "k8s_node")
 
 var authColumns = set("id", "timestamp", "received_at", "tenant_id", "event_type", "auth_method",
 	"user_id", "session_id", "error_code", "attempt_number", "mfa_required", "mfa_passed",
 	"ip_country", "ip_asn", "device_new", "risk_score", "user_linkage_key", "_retention_days")
+
+var metricsColumns = set("id", "timestamp", "start_timestamp", "received_at", "tenant_id", "service",
+	"environment", "metric_name", "metric_type", "unit", "description", "temporality", "is_monotonic",
+	"value", "count", "sum", "min", "max", "bucket_counts", "explicit_bounds", "scale", "zero_count",
+	"positive_offset", "positive_buckets", "negative_offset", "negative_buckets", "attributes",
+	"resource", "_retention_days")
+
+var tracesColumns = set("id", "timestamp", "received_at", "tenant_id", "service", "environment",
+	"trace_id", "span_id", "parent_span_id", "name", "kind", "start_time", "end_time", "duration_ns",
+	"status_code", "status_message", "attributes", "resource", "scope_name", "scope_version",
+	"trace_state", "_retention_days",
+	"git_sha", "deploy_id", "pr_number", "k8s_namespace", "k8s_pod", "k8s_node")
+
+var changeColumns = set("id", "timestamp", "received_at", "tenant_id", "service", "environment",
+	"kind", "title", "git_sha", "deploy_id", "pr_number", "flag_key", "config_diff", "author",
+	"metadata", "_retention_days")
 
 // Compile parses and compiles a LogQL++ statement to ClickHouse SQL, always
 // injecting the authenticated tenant predicate (never trusting user input).
@@ -45,8 +62,10 @@ func Compile(input, tenantID string, opts Options) (*Compiled, error) {
 	if err != nil {
 		return nil, err
 	}
-	if stmt.Table != "logs" && stmt.Table != "auth_events" {
-		return nil, fmt.Errorf("unknown table %q (use logs or auth_events)", stmt.Table)
+	switch stmt.Table {
+	case "logs", "auth_events", "metrics", "traces", "change_events":
+	default:
+		return nil, fmt.Errorf("unknown table %q (use logs, auth_events, metrics, traces, or change_events)", stmt.Table)
 	}
 	c := &compiler{tenant: tenantID, table: stmt.Table}
 	switch stmt.Kind {
@@ -60,6 +79,9 @@ func Compile(input, tenantID string, opts Options) (*Compiled, error) {
 }
 
 func (c *compiler) compileSearch(s *Stmt, opts Options) (*Compiled, error) {
+	if c.table != "logs" {
+		return nil, fmt.Errorf("SEARCH full-text is only available on logs (use SELECT ... FROM %s)", c.table)
+	}
 	where, err := c.whereSQL(s)
 	if err != nil {
 		return nil, err
@@ -236,15 +258,31 @@ func (c *compiler) mapField(f Field) (expr string, isLevel bool, err error) {
 
 	head := strings.ToLower(f.Parts[0])
 	switch head {
-	case "body", "resource":
+	case "body":
 		if c.table != "logs" {
-			return "", false, fmt.Errorf("%s.* is only available on logs", head)
+			return "", false, fmt.Errorf("body.* is only available on logs")
 		}
-		keys := make([]string, 0, len(f.Parts)-1)
-		for _, k := range f.Parts[1:] {
-			keys = append(keys, quote(k))
+		return jsonExtract("body", f.Parts[1:]), false, nil
+	case "resource":
+		// resource is a JSON string column on logs, metrics, and traces.
+		if c.table == "auth_events" {
+			return "", false, fmt.Errorf("resource.* is not available on auth_events")
 		}
-		return fmt.Sprintf("JSONExtractString(%s, %s)", head, strings.Join(keys, ", ")), false, nil
+		return jsonExtract("resource", f.Parts[1:]), false, nil
+	case "attr", "attribute", "attributes":
+		switch c.table {
+		case "traces":
+			// span attributes are a JSON string column.
+			return jsonExtract("attributes", f.Parts[1:]), false, nil
+		case "metrics":
+			// data-point labels are a Map(String,String); single-key access only.
+			if len(f.Parts) != 2 {
+				return "", false, fmt.Errorf("metrics label must be attr.<label>")
+			}
+			return fmt.Sprintf("attributes[%s]", quote(f.Parts[1])), false, nil
+		default:
+			return "", false, fmt.Errorf("attr.* is only available on metrics or traces")
+		}
 	case "auth":
 		if c.table != "auth_events" {
 			return "", false, fmt.Errorf("auth.* is only available on auth_events")
@@ -262,10 +300,28 @@ func (c *compiler) mapField(f Field) (expr string, isLevel bool, err error) {
 }
 
 func (c *compiler) columns() map[string]bool {
-	if c.table == "auth_events" {
+	switch c.table {
+	case "auth_events":
 		return authColumns
+	case "metrics":
+		return metricsColumns
+	case "traces":
+		return tracesColumns
+	case "change_events":
+		return changeColumns
+	default:
+		return logsColumns
 	}
-	return logsColumns
+}
+
+// jsonExtract builds a JSONExtractString over a JSON-string column for a dotted
+// path (col.a.b → JSONExtractString(col, 'a', 'b')).
+func jsonExtract(col string, parts []string) string {
+	keys := make([]string, 0, len(parts))
+	for _, k := range parts {
+		keys = append(keys, quote(k))
+	}
+	return fmt.Sprintf("JSONExtractString(%s, %s)", col, strings.Join(keys, ", "))
 }
 
 func compileValue(v Value) (string, error) {
@@ -317,10 +373,18 @@ func searchPredicate(phrase string) string {
 }
 
 func defaultProjection(table string) []string {
-	if table == "auth_events" {
+	switch table {
+	case "auth_events":
 		return []string{"id", "timestamp", "event_type", "auth_method", "user_id", "ip_country", "risk_score"}
+	case "metrics":
+		return []string{"timestamp", "service", "metric_name", "metric_type", "value", "count", "sum", "attributes"}
+	case "traces":
+		return []string{"timestamp", "service", "name", "kind", "status_code", "duration_ns", "trace_id", "span_id"}
+	case "change_events":
+		return []string{"timestamp", "service", "kind", "title", "git_sha", "deploy_id", "pr_number", "flag_key", "author"}
+	default:
+		return []string{"id", "timestamp", "service", "level", "message", "trace_id", "span_id", "body"}
 	}
-	return []string{"id", "timestamp", "service", "level", "message", "trace_id", "span_id", "body"}
 }
 
 func limit(s *Stmt, opts Options) int {
@@ -333,6 +397,10 @@ func limit(s *Stmt, opts Options) int {
 	}
 	return l
 }
+
+// QuoteLiteral escapes and single-quotes a string for safe inclusion as a
+// ClickHouse string literal (exported for handlers that build small queries).
+func QuoteLiteral(s string) string { return quote(s) }
 
 // quote escapes and single-quotes a string literal for ClickHouse (backslash style).
 func quote(s string) string {
