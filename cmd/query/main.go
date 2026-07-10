@@ -105,6 +105,9 @@ func main() {
 
 		// Correlation-aware panel overlays (Module 22.2)
 		rt.Get("/overlays", handler.Overlays(ch, pool))
+
+		// NL-to-query translation (G18 / Module 4.8)
+		rt.Post("/query/nl", handler.NLQuery())
 	})
 
 	// Public, unauthenticated shared-dashboard read (Module 22.3) — seat-free.
@@ -166,6 +169,10 @@ func main() {
 
 		// Quota usage (M9)
 		rt.Get("/quota/usage", handler.QuotaUsage(ch, pool))
+
+		// DPDP / GDPR erasure (G17)
+		rt.Post("/erasure", handler.CreateErasure(pool, ch))
+		rt.Get("/erasure", handler.ListErasure(pool))
 	})
 
 	srv := &http.Server{

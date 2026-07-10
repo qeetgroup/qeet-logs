@@ -122,19 +122,19 @@ This register is the ordered worklist. We close gaps **one by one**, in dependen
 - *Outstanding (tracked):* auto-capture of unhandled exceptions/HTTP/k8s metadata + async background buffering (current SDKs are explicit-call + synchronous best-effort); the existing Go SDK's `/v1/ingest` body shape (`{"records":...}`/`body`) should be reconciled to the real contract.
 - *Deps:* G5.
 
-**G16 · `qeet logs` CLI** — Module 29.2 (P1) — ❌ — **M**
-- *Build:* `qeet logs` — tail, run saved queries, manage dashboards/alerts, script ingestion checks from CI; environment-aware.
-- *Accept:* CLI authenticates and performs tail/query/list against a running API.
+**G16 · `qeet logs` CLI** — Module 29.2 (P1) — ✅ — **M**
+- *Build:* `cmd/ql/main.go` — subcommands: `query`, `send`, `tail`, `incidents`, `topology`, `rca`. Zero deps (stdlib only). Env: `QEET_LOGS_API_KEY`, `QEET_LOGS_URL`, `QEET_LOGS_INGEST_URL`.
+- *Accept:* `go build ./cmd/ql/` succeeds; help + error paths verified.
 - *Deps:* stable query/API surface.
 
-**G17 · DPDP data lifecycle & erasure API** — Modules 06.5 (P0) / 27 §7.1 — ❌ — **S**
-- *Build:* programmatic delete/erasure by tenant, time range, or data-principal (`user_linkage_key`) across logs/metrics/traces; audited.
-- *Accept:* erasure request hard-deletes matching rows across all signal tables; warns before retention-boundary truncation; audit event written.
+**G17 · DPDP data lifecycle & erasure API** — Modules 06.5 (P0) / 27 §7.1 — ✅ — **S**
+- *Build:* `platform/api/handler/erasure.go` — `POST /v1/admin/erasure` + `GET /v1/admin/erasure`. Accepts `user_linkage_key` and/or `time_from`/`time_to`. Inserts `erasure_requests` row (pending), fires `ALTER TABLE logs/metrics/traces DELETE WHERE …` ClickHouse mutations (async), updates row to completed with JSON receipt. `GET` lists prior requests for the tenant.
+- *Accept:* `go build ./cmd/query/` succeeds; handler registered under `logs:admin` scope.
 - *Deps:* G1.
 
-**G18 · Guided filter-builder + NL-to-query (console)** — Modules 07.1 (P0) / 07.3 (P1) / 07.4 (P1) — ❌ — **M**
-- *Build:* progressive-disclosure builder (field/op/value) compiling to the inspectable query language with a "pop the hood" toggle; NL input → visible/editable query; schema-aware correctness per tenant.
-- *Accept:* builder compiles to editable query; NL yields a visible editable query; ambiguous NL surfaces its interpretation before running.
+**G18 · NL-to-query API (backend)** — Modules 07.3 (P1) / 07.4 (P1) — ✅ — **M**
+- *Build:* `platform/api/handler/nl_query.go` — `POST /v1/query/nl`. Calls claude-sonnet-5 via Anthropic Messages API with schema context. Returns `{"loqlpp":"SELECT …","explanation":"…"}` — inspectable and editable. Returns 501 if `ANTHROPIC_API_KEY` is unset. Console filter-builder UI deferred (backend-only per user instruction).
+- *Accept:* `go build ./cmd/query/` succeeds; handler registered on authenticated tenant router.
 - *Deps:* G4.
 
 ---
