@@ -30,6 +30,20 @@ enum Stmt {
     Del(Vec<String>),
     Redact(Vec<String>),
     Rename(Vec<String>, Vec<String>),
+    // Conditional: if COND inner_stmt (single-line, no loops).
+    If(Cond, Box<Stmt>),
+    // Route hint: sets the target signal table for this event.
+    Route(String),
+}
+
+#[derive(Debug, Clone)]
+enum Cond {
+    Eq(Vec<String>, Expr),
+    Ne(Vec<String>, Expr),
+    Lt(Vec<String>, Expr),
+    Gt(Vec<String>, Expr),
+    Exists(Vec<String>),
+    Absent(Vec<String>),
 }
 
 #[derive(Debug, Clone)]
@@ -41,12 +55,15 @@ enum Expr {
     Call(String, Vec<Expr>),
 }
 
-/// Outcome of applying a program: number of statements applied and any
-/// per-statement errors (surfaced, never fatal).
+/// Outcome of applying a program: number of statements applied, any
+/// per-statement errors (surfaced, never fatal), and an optional routing hint.
 #[derive(Debug, Default)]
 pub struct ApplyReport {
     pub applied: usize,
     pub errors: Vec<String>,
+    /// Set by a `route` statement to redirect this event to a different table.
+    /// None = use the default table for the endpoint that received the event.
+    pub route: Option<String>,
 }
 
 impl Program {
@@ -79,12 +96,42 @@ impl Program {
         }
         let mut report = ApplyReport::default();
         for stmt in &self.stmts {
-            match self.exec(stmt, event) {
-                Ok(()) => report.applied += 1,
+            match self.exec_top(stmt, event) {
+                Ok(maybe_route) => {
+                    if let Some(r) = maybe_route {
+                        report.route = Some(r);
+                    }
+                    report.applied += 1;
+                }
                 Err(e) => report.errors.push(e),
             }
         }
         report
+    }
+
+    // exec_top handles the statement types that have special return values
+    // (If, Route) before delegating to exec for the leaf statement types.
+    fn exec_top(&self, stmt: &Stmt, event: &mut Value) -> Result<Option<String>, String> {
+        match stmt {
+            Stmt::If(cond, inner) => {
+                if eval_cond(cond, event) {
+                    self.exec_top(inner, event)
+                } else {
+                    Ok(None)
+                }
+            }
+            Stmt::Route(table) => {
+                const VALID: &[&str] = &["logs", "metrics", "traces", "auth_events", "change_events"];
+                if !VALID.contains(&table.as_str()) {
+                    return Err(format!("route: unknown table `{table}`"));
+                }
+                Ok(Some(table.clone()))
+            }
+            other => {
+                self.exec(other, event)?;
+                Ok(None)
+            }
+        }
     }
 
     fn exec(&self, stmt: &Stmt, event: &mut Value) -> Result<(), String> {
@@ -111,6 +158,8 @@ impl Program {
                 }
                 Ok(())
             }
+            // If and Route are handled in exec_top and should never reach here.
+            Stmt::If(_, _) | Stmt::Route(_) => unreachable!(),
         }
     }
 }
@@ -145,8 +194,71 @@ fn parse_stmt(line: &str) -> Result<Stmt, String> {
             let (a, b) = rest.trim().split_once(char::is_whitespace).ok_or("rename requires two paths")?;
             Ok(Stmt::Rename(parse_path(a.trim())?, parse_path(b.trim())?))
         }
+        "if" => {
+            // Grammar: if PATH OP [EXPR] STMT
+            //   OP: == | != | < | > | exists | absent
+            // The body STMT starts at the next statement keyword after the condition.
+            let (cond, body_src) = parse_if_cond(rest.trim())?;
+            let inner = parse_stmt(body_src.trim())?;
+            Ok(Stmt::If(cond, Box::new(inner)))
+        }
+        "route" => {
+            // Grammar: route "table_name"
+            let tbl = rest.trim();
+            if let Some(inner) = tbl.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+                Ok(Stmt::Route(inner.to_string()))
+            } else {
+                Err(format!("route requires a quoted table name, got `{tbl}`"))
+            }
+        }
         other => Err(format!("unknown statement `{other}`")),
     }
+}
+
+/// Parse an `if` condition from the rest of the line and return (Cond, body_src).
+/// Body_src is the remainder of the line after the condition (the nested stmt).
+fn parse_if_cond(s: &str) -> Result<(Cond, &str), String> {
+    // Read the path (first whitespace-separated token).
+    let (path_tok, after_path) = split_first_word(s);
+    let path = parse_path(path_tok)?;
+
+    let (op, after_op) = split_first_word(after_path);
+    match op {
+        "exists" => return Ok((Cond::Exists(path), after_op)),
+        "absent" => return Ok((Cond::Absent(path), after_op)),
+        _ => {}
+    }
+
+    // Value-bearing operators: ==  !=  <  >
+    let (val_tok, body) = if after_op.starts_with('"') {
+        // Quoted string: scan to closing '"', respecting '\"'.
+        let bytes = after_op.as_bytes();
+        let mut i = 1;
+        while i < bytes.len() {
+            if bytes[i] == b'\\' {
+                i += 2;
+            } else if bytes[i] == b'"' {
+                i += 1;
+                break;
+            } else {
+                i += 1;
+            }
+        }
+        let (tok, rest) = after_op.split_at(i);
+        (tok, rest.trim_start())
+    } else {
+        split_first_word(after_op)
+    };
+
+    let expr = parse_expr(val_tok)?;
+    let cond = match op {
+        "==" => Cond::Eq(path, expr),
+        "!=" => Cond::Ne(path, expr),
+        "<"  => Cond::Lt(path, expr),
+        ">"  => Cond::Gt(path, expr),
+        other => return Err(format!("unknown condition operator `{other}`")),
+    };
+    Ok((cond, body))
 }
 
 fn split_first_word(s: &str) -> (&str, &str) {
@@ -275,6 +387,33 @@ fn eval_call(name: &str, args: &[Expr], event: &Value) -> Result<Value, String> 
             Ok(Value::Null)
         }
         other => Err(format!("unknown function `{other}`")),
+    }
+}
+
+fn eval_cond(cond: &Cond, event: &Value) -> bool {
+    match cond {
+        Cond::Eq(path, expr) => {
+            let lhs = get_path(event, path).cloned().unwrap_or(Value::Null);
+            let rhs = eval(expr, event).unwrap_or(Value::Null);
+            lhs == rhs
+        }
+        Cond::Ne(path, expr) => {
+            let lhs = get_path(event, path).cloned().unwrap_or(Value::Null);
+            let rhs = eval(expr, event).unwrap_or(Value::Null);
+            lhs != rhs
+        }
+        Cond::Lt(path, expr) => {
+            let l = get_path(event, path).and_then(to_num);
+            let r = eval(expr, event).ok().as_ref().and_then(to_num);
+            matches!((l, r), (Some(l), Some(r)) if l < r)
+        }
+        Cond::Gt(path, expr) => {
+            let l = get_path(event, path).and_then(to_num);
+            let r = eval(expr, event).ok().as_ref().and_then(to_num);
+            matches!((l, r), (Some(l), Some(r)) if l > r)
+        }
+        Cond::Exists(path) => get_path(event, path).is_some(),
+        Cond::Absent(path) => get_path(event, path).is_none(),
     }
 }
 
@@ -420,5 +559,81 @@ mod tests {
         let mut ev = json!({});
         p.apply(&mut ev);
         assert_eq!(ev["a"], "b");
+    }
+
+    #[test]
+    fn if_eq_fires_when_true() {
+        let out = run(
+            "if .level == \"error\" set .alert = true",
+            json!({"level": "error"}),
+        );
+        assert_eq!(out["alert"], true);
+    }
+
+    #[test]
+    fn if_eq_skips_when_false() {
+        let out = run(
+            "if .level == \"error\" set .alert = true",
+            json!({"level": "info"}),
+        );
+        assert!(out.get("alert").is_none());
+    }
+
+    #[test]
+    fn if_ne_fires_when_not_equal() {
+        let out = run(
+            "if .env != \"prod\" set .debug = true",
+            json!({"env": "staging"}),
+        );
+        assert_eq!(out["debug"], true);
+    }
+
+    #[test]
+    fn if_exists_and_absent() {
+        let out = run(
+            "if .trace_id exists set .traced = true\nif .missing absent set .no_trace = true",
+            json!({"trace_id": "abc"}),
+        );
+        assert_eq!(out["traced"], true);
+        assert_eq!(out["no_trace"], true);
+    }
+
+    #[test]
+    fn if_gt_lt_numeric() {
+        let out = run(
+            "if .count > 100 set .big = true\nif .count < 10 set .small = true",
+            json!({"count": 200}),
+        );
+        assert_eq!(out["big"], true);
+        assert!(out.get("small").is_none());
+    }
+
+    #[test]
+    fn route_sets_hint() {
+        let p = Program::parse("route \"auth_events\"").unwrap();
+        let mut ev = json!({"event_type": "login"});
+        let report = p.apply(&mut ev);
+        assert_eq!(report.route.as_deref(), Some("auth_events"));
+    }
+
+    #[test]
+    fn route_unknown_table_is_skipped_not_fatal() {
+        let p = Program::parse("route \"unknown_table\"").unwrap();
+        let mut ev = json!({});
+        let report = p.apply(&mut ev);
+        assert_eq!(report.errors.len(), 1);
+        assert!(report.route.is_none());
+    }
+
+    #[test]
+    fn if_route_conditional_routing() {
+        let p = Program::parse("if .event_type exists route \"auth_events\"").unwrap();
+        let mut ev = json!({"event_type": "login"});
+        let report = p.apply(&mut ev);
+        assert_eq!(report.route.as_deref(), Some("auth_events"));
+
+        let mut ev2 = json!({"level": "info"});
+        let report2 = p.apply(&mut ev2);
+        assert!(report2.route.is_none());
     }
 }

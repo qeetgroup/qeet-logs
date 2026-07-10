@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"time"
+
+	"github.com/qeetgroup/qeet-logs/domains/topology"
 )
 
 // Fingerprint is the correlation key that collapses signals for one service
@@ -30,6 +32,12 @@ func serviceOf(rule AlertRule) string {
 func (e *Engine) correlate(ctx context.Context, rule AlertRule, count int64, conf float64) error {
 	svc := serviceOf(rule)
 	fp := Fingerprint(rule.TenantID, svc)
+	// Topology-proximity correlation (G11 tracked): if a topology-adjacent service
+	// already has an open incident, merge into that one rather than opening a new
+	// incident for the same degradation propagating through the graph.
+	if proxyFP := e.neighborIncidentFP(ctx, rule.TenantID, svc); proxyFP != "" {
+		fp = proxyFP
+	}
 	deployID := e.nearbyDeploy(ctx, rule.TenantID, svc, rule.WindowSeconds)
 	title := fmt.Sprintf("%s degraded", svc)
 	if svc == "*" {
@@ -104,6 +112,37 @@ func (e *Engine) resolveOpenIncident(ctx context.Context, rule AlertRule) error 
 		`UPDATE incidents SET status = 'resolved', resolved_at = now()
 		 WHERE fingerprint = $1 AND status = 'open'`, fp)
 	return err
+}
+
+// neighborIncidentFP looks up the topology graph and returns the fingerprint of
+// an open incident for a 1-hop neighbor of service. Returns "" if none found.
+// This collapses cascading failures (A calls B; B degrades → A fires too) into
+// one incident rather than opening separate ones.
+func (e *Engine) neighborIncidentFP(ctx context.Context, tenantID, service string) string {
+	if service == "*" {
+		return ""
+	}
+	g, err := topology.Derive(ctx, e.ch, tenantID, 3600)
+	if err != nil || g == nil {
+		return ""
+	}
+	neighbors := g.Neighbors(service)
+	if len(neighbors) == 0 {
+		return ""
+	}
+	fps := make([]string, 0, len(neighbors))
+	for _, n := range neighbors {
+		fps = append(fps, Fingerprint(tenantID, n))
+	}
+	var existingFP string
+	err = e.pool.QueryRow(ctx,
+		`SELECT fingerprint FROM incidents WHERE fingerprint = ANY($1::text[]) AND status = 'open' LIMIT 1`,
+		fps,
+	).Scan(&existingFP)
+	if err != nil {
+		return ""
+	}
+	return existingFP
 }
 
 // nearbyDeploy returns the most recent deploy for a service within the window

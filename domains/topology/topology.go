@@ -187,6 +187,24 @@ func (g *Graph) FocusBlastRadius(service string) {
 	g.Nodes = nodes
 }
 
+// Neighbors returns the 1-hop services connected to service (as caller OR callee).
+// Used by the alerting engine to merge topologically-proximate incidents.
+func (g *Graph) Neighbors(service string) []string {
+	seen := make(map[string]struct{})
+	for _, e := range g.Edges {
+		if e.Caller == service {
+			seen[e.Callee] = struct{}{}
+		} else if e.Callee == service {
+			seen[e.Caller] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	return out
+}
+
 func coverage(n *Node) string {
 	switch {
 	case n.HasTraces && n.HasLogs:

@@ -8,10 +8,12 @@
 //! `qeet-logs.{tenant}.{logs|metrics}` for the writer.
 //!
 //! Listens on INGEST_PORT (default 8101) and also on 4318 (the OTLP/HTTP
-//! convention). Protobuf OTLP is not yet supported (JSON only) in this milestone.
+//! convention). Both OTLP/HTTP JSON (`application/json`) and OTLP/HTTP protobuf
+//! (`application/x-protobuf`) are supported for logs, metrics, and traces.
 
 mod legacy;
 mod otlp;
+mod otlp_proto;
 mod prom;
 
 use std::collections::HashMap;
@@ -220,12 +222,16 @@ async fn ingest_otlp(State(s): State<AppState>, headers: HeaderMap, body: Bytes)
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if ct.contains("protobuf") {
-        return err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "protobuf OTLP not yet supported (send application/json)");
-    }
-    let inputs = match otlp::parse_logs(&body) {
-        Ok(v) => v,
-        Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid OTLP JSON: {e}")),
+    let inputs = if ct.contains("protobuf") {
+        match otlp_proto::parse_logs_proto(&body) {
+            Ok(v) => v,
+            Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid OTLP protobuf (logs): {e}")),
+        }
+    } else {
+        match otlp::parse_logs(&body) {
+            Ok(v) => v,
+            Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid OTLP JSON: {e}")),
+        }
     };
     let (mut accepted, mut dropped, mut errors) = (0u64, 0u64, 0u64);
     for input in inputs {
@@ -298,12 +304,16 @@ async fn ingest_metrics(State(s): State<AppState>, headers: HeaderMap, body: Byt
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if ct.contains("protobuf") {
-        return err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "protobuf OTLP not yet supported (send application/json)");
-    }
-    let inputs = match otlp::parse_metrics(&body) {
-        Ok(v) => v,
-        Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid OTLP metrics JSON: {e}")),
+    let inputs = if ct.contains("protobuf") {
+        match otlp_proto::parse_metrics_proto(&body) {
+            Ok(v) => v,
+            Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid OTLP protobuf (metrics): {e}")),
+        }
+    } else {
+        match otlp::parse_metrics(&body) {
+            Ok(v) => v,
+            Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid OTLP metrics JSON: {e}")),
+        }
     };
     ingest_metric_inputs(&s, &auth, inputs).await
 }
@@ -355,12 +365,16 @@ async fn ingest_traces(State(s): State<AppState>, headers: HeaderMap, body: Byte
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if ct.contains("protobuf") {
-        return err(StatusCode::UNSUPPORTED_MEDIA_TYPE, "protobuf OTLP not yet supported (send application/json)");
-    }
-    let inputs = match otlp::parse_traces(&body) {
-        Ok(v) => v,
-        Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid OTLP traces JSON: {e}")),
+    let inputs = if ct.contains("protobuf") {
+        match otlp_proto::parse_traces_proto(&body) {
+            Ok(v) => v,
+            Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid OTLP protobuf (traces): {e}")),
+        }
+    } else {
+        match otlp::parse_traces(&body) {
+            Ok(v) => v,
+            Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid OTLP traces JSON: {e}")),
+        }
     };
     let (mut accepted, mut sampled_out, mut errors) = (0u64, 0u64, 0u64);
     for input in inputs {

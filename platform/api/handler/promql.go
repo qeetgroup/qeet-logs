@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"context"
+	"fmt"
 	"math"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"time"
@@ -39,6 +42,10 @@ func PromInstantQuery(ch *clickhouse.Client, pool *pgxpool.Pool) http.HandlerFun
 			promErr(w, err.Error())
 			return
 		}
+		if err := checkCardinality(ctx, ch, apimw.TenantID(ctx), compiled.Metric); err != nil {
+			promErr(w, err.Error())
+			return
+		}
 		rows, err := ch.Query(ctx, compiled.SQL)
 		if err != nil {
 			promErr(w, "query execution failed: "+err.Error())
@@ -71,6 +78,10 @@ func PromRangeQuery(ch *clickhouse.Client, pool *pgxpool.Pool) http.HandlerFunc 
 			StepSec:   step,
 		})
 		if err != nil {
+			promErr(w, err.Error())
+			return
+		}
+		if err := checkCardinality(ctx, ch, apimw.TenantID(ctx), compiled.Metric); err != nil {
 			promErr(w, err.Error())
 			return
 		}
@@ -169,6 +180,44 @@ func writeMatrix(w http.ResponseWriter, c *query.PromCompiled, rows []map[string
 		"status": "success",
 		"data":   map[string]any{"resultType": "matrix", "result": result},
 	})
+}
+
+// maxLabelCardinality returns the configured per-tenant label-cardinality cap
+// (METRIC_MAX_LABEL_CARDINALITY env var, default 50 000).
+var maxLabelCardinality = func() int64 {
+	if v, err := strconv.ParseInt(os.Getenv("METRIC_MAX_LABEL_CARDINALITY"), 10, 64); err == nil && v > 0 {
+		return v
+	}
+	return 50_000
+}()
+
+// checkCardinality counts distinct attribute combinations for the queried metric
+// in the trailing hour and rejects the request if it exceeds the cap.
+// This protects against expensive fan-out queries on high-cardinality metrics.
+func checkCardinality(ctx context.Context, ch *clickhouse.Client, tenantID, metric string) error {
+	if metric == "" {
+		return nil
+	}
+	sql := fmt.Sprintf(
+		`SELECT uniqExact(attributes) AS c FROM metrics`+
+			` WHERE tenant_id = %s AND metric_name = %s AND timestamp >= now() - INTERVAL 1 HOUR`,
+		query.QuoteLiteral(tenantID), query.QuoteLiteral(metric),
+	)
+	rows, err := ch.Query(ctx, sql)
+	if err != nil || len(rows) == 0 {
+		return nil // best-effort: don't block on CH errors
+	}
+	var card int64
+	switch v := rows[0]["c"].(type) {
+	case float64:
+		card = int64(v)
+	case string:
+		fmt.Sscanf(v, "%d", &card)
+	}
+	if card > maxLabelCardinality {
+		return fmt.Errorf("label cardinality %d exceeds limit %d for metric %q; add label matchers to reduce cardinality", card, maxLabelCardinality, metric)
+	}
+	return nil
 }
 
 func promErr(w http.ResponseWriter, msg string) {

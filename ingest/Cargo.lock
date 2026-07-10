@@ -1402,6 +1402,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "axum",
+ "chrono",
  "deadpool-postgres",
  "hex",
  "prost",
