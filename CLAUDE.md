@@ -63,7 +63,9 @@ migrations/               Postgres golang-migrate pairs (NNNN_*.up/down.sql, imm
 clickhouse/migrations/    ClickHouse DDL (logs table, TTL, auth_events) — M1
 apps/console/             TanStack Start + @qeetrix/ui (:3020) — M7 (pnpm, Node 24, .nvmrc)
 sdk/go/                   Public Go SDK (separate module: github.com/qeetgroup/qeet-logs/sdk/go) — M9
-api/openapi/              OpenAPI 3.1 spec (all ingest + query + admin endpoints) — M9
+api/openapi/              4 split bounded-context OpenAPI 3.1 specs (ingest/query/admin/operations) — source of truth, no monolith; see api/openapi/README.md
+api/postman/              Postman collection + environment + newman runner (run.sh)
+tools/openapi-split/      split/merge/verify tool for the OpenAPI specs (nested Go module; `cd` in to run)
 deploy/                   docker-compose + Caddyfile + Helm chart + SOC2-CONTROLS.md — M9
 ```
 
@@ -104,6 +106,6 @@ Building the PRD's **Phase 1 (MVP)** in milestones M0–M9. **ALL MILESTONES COM
 - M6: alerter binary (`cmd/alerter`) + threshold/absence engine (`domains/alerting/`) + migration 0005
 - M7: TanStack Start console (`apps/console/`) — 9 routes, pnpm/Node 24, dev server :3020
 - M8: Dashboards CRUD (`handler/dashboards.go`) + Saved Searches (`handler/saved_searches.go`) + console routes
-- M9: DLQ table (migration 0006) + DLQ replay API + quota usage API + Go SDK (`sdk/go/`) + OpenAPI 3.1 spec (`api/openapi/openapi.yaml`) + Helm chart (`deploy/helm/`) + SOC 2 control mapping (`deploy/SOC2-CONTROLS.md`)
+- M9: DLQ table (migration 0006) + DLQ replay API + quota usage API + Go SDK (`sdk/go/`) + OpenAPI 3.1 specs (`api/openapi/*.yaml`, split by bounded context) + Postman collection (`api/postman/`) + Helm chart (`deploy/helm/`) + SOC 2 control mapping (`deploy/SOC2-CONTROLS.md`)
 
 Phase 2 (PII ML, GDPR erasure) and Phase 3 (anomaly detection, NLQ, self-hosted) out of scope.

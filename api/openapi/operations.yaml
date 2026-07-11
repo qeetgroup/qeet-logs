@@ -1,0 +1,93 @@
+openapi: 3.1.0
+info:
+  title: Qeet Logs — Operations API
+  version: "2.0"
+  description: |
+    Privacy-first, multi-tenant observability platform — logs, metrics, and traces.
+
+    ## Authentication
+    All endpoints except `/healthz`, `/readyz`, `/version`, and `/shared/**` require
+    authentication via `X-Qeet-Api-Key` header **or** a Bearer JWT issued by Qeet ID.
+
+    ## Servers
+    | Purpose | Production | Local |
+    |---|---|---|
+    | Query / Admin API | `api.logs.qeet.in` | `localhost:8100` |
+    | Ingest gateway | `ingest.logs.qeet.in` | `localhost:8101` |
+    | OTLP/HTTP | `ingest.logs.qeet.in` | `localhost:4318` |
+
+    ## RBAC scopes
+    | Scope | Grants |
+    |---|---|
+    | `logs:ingest` | Write log records, metrics, traces, change events |
+    | `logs:read` | Query stored records, tail, topology, timeline, incidents |
+    | `logs:query` | Same as `logs:read` (alias) |
+    | `logs:admin` | Admin operations — API keys, transforms, erasure, dashboards |
+    | `logs:platform` | Cross-tenant operations (Qeet operators only) |
+  contact:
+    name: Qeet Group
+    url: https://qeet.in
+  license:
+    name: Proprietary
+servers:
+  - url: https://api.logs.qeet.in
+    description: Production — query & admin
+  - url: http://localhost:8100
+    description: Local dev — query API
+security:
+  - ApiKey: []
+  - BearerJWT: []
+tags:
+  - name: Health
+paths:
+  # ── Health ─────────────────────────────────────────────────────────────────
+  /healthz:
+    get:
+      summary: Liveness probe
+      security: []
+      tags: [Health]
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+  /readyz:
+    get:
+      summary: Readiness probe — checks Postgres, Redis, ClickHouse, NATS
+      security: []
+      tags: [Health]
+      responses:
+        "200":
+          description: All dependencies reachable
+        "503":
+          description: One or more dependencies unavailable
+  /version:
+    get:
+      summary: Binary version
+      security: []
+      tags: [Health]
+      responses:
+        "200":
+          description: Version string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: {type: string}
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-Qeet-Api-Key
+      description: Tenant API key issued by the Qeet Logs console.
+    BearerJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Qeet ID OIDC access token.

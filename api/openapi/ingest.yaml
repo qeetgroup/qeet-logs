@@ -1,0 +1,361 @@
+openapi: 3.1.0
+info:
+  title: Qeet Logs — Ingest API
+  version: "2.0"
+  description: |
+    Privacy-first, multi-tenant observability platform — logs, metrics, and traces.
+
+    ## Authentication
+    All endpoints except `/healthz`, `/readyz`, `/version`, and `/shared/**` require
+    authentication via `X-Qeet-Api-Key` header **or** a Bearer JWT issued by Qeet ID.
+
+    ## Servers
+    | Purpose | Production | Local |
+    |---|---|---|
+    | Query / Admin API | `api.logs.qeet.in` | `localhost:8100` |
+    | Ingest gateway | `ingest.logs.qeet.in` | `localhost:8101` |
+    | OTLP/HTTP | `ingest.logs.qeet.in` | `localhost:4318` |
+
+    ## RBAC scopes
+    | Scope | Grants |
+    |---|---|
+    | `logs:ingest` | Write log records, metrics, traces, change events |
+    | `logs:read` | Query stored records, tail, topology, timeline, incidents |
+    | `logs:query` | Same as `logs:read` (alias) |
+    | `logs:admin` | Admin operations — API keys, transforms, erasure, dashboards |
+    | `logs:platform` | Cross-tenant operations (Qeet operators only) |
+  contact:
+    name: Qeet Group
+    url: https://qeet.in
+  license:
+    name: Proprietary
+servers:
+  - url: https://ingest.logs.qeet.in
+    description: Production — ingest gateway
+  - url: http://localhost:8101
+    description: Local dev — ingest gateway
+security:
+  - ApiKey: []
+  - BearerJWT: []
+tags:
+  - name: Ingest — Logs
+    description: Log record ingestion (single, batch, OTLP, GELF, syslog).
+  - name: Ingest — Metrics
+    description: Metric ingestion (OTLP, Prometheus remote_write).
+  - name: Ingest — Traces
+    description: Distributed trace / span ingestion (OTLP).
+paths:
+  # ── Ingest — logs ──────────────────────────────────────────────────────────
+  /v1/ingest:
+    post:
+      summary: Ingest a single log record
+      description: |
+        Accepts a flat JSON object. Recognised fields are promoted to typed columns;
+        all other top-level keys are stored in the structured `body` column.
+        Remap transforms are applied before storage (Module 04.2).
+        Requires `logs:ingest` scope.
+      tags: [Ingest — Logs]
+      servers:
+        - url: https://ingest.logs.qeet.in
+        - url: http://localhost:8101
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestRecord'
+            example:
+              service: payments
+              level: error
+              message: "stripe webhook signature mismatch"
+              trace_id: "4bf92f3577b34da6a3ce929d0e0e4736"
+              request_id: "req_xyz"
+      responses:
+        "202":
+          description: Accepted for async write
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IngestResponse'}
+        "400":
+          description: Invalid JSON
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Missing or invalid API key}
+        "403": {description: 'Missing logs:ingest scope'}
+        "429": {description: Rate limit exceeded}
+  /v1/ingest/batch:
+    post:
+      summary: Ingest a batch of log records (NDJSON)
+      description: |
+        Each line is a flat JSON object (same shape as `/v1/ingest`).
+        Empty lines are skipped. Per-line parse errors are counted in `errors` but
+        do not abort the batch. Requires `logs:ingest` scope.
+      tags: [Ingest — Logs]
+      servers:
+        - url: https://ingest.logs.qeet.in
+        - url: http://localhost:8101
+      requestBody:
+        required: true
+        content:
+          application/x-ndjson:
+            schema:
+              type: string
+              description: Newline-delimited JSON — one IngestRecord per line.
+            example: |
+              {"service":"api","level":"info","message":"request processed"}
+              {"service":"api","level":"warn","message":"slow query","duration_ms":850}
+      responses:
+        "202":
+          description: Batch processed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IngestResponse'}
+        "401": {description: Unauthorized}
+        "403": {description: 'Missing logs:ingest scope'}
+        "429": {description: Rate limit exceeded}
+  /v1/ingest/gelf:
+    post:
+      summary: Ingest a GELF log record
+      description: |
+        Accepts a Graylog Extended Log Format (GELF) JSON payload.
+        `_`-prefixed custom fields are extracted as attributes.
+        Requires `logs:ingest` scope.
+      tags: [Ingest — Logs]
+      servers:
+        - url: https://ingest.logs.qeet.in
+        - url: http://localhost:8101
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: GELF payload (see graylog.org/gelf spec).
+      responses:
+        "202": {description: Accepted}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+  /v1/ingest/syslog:
+    post:
+      summary: Ingest an RFC 5424 syslog message
+      description: |
+        Accepts a raw RFC 5424 syslog line. Structured data is stripped.
+        Falls back to raw-line parsing on format errors.
+        Requires `logs:ingest` scope.
+      tags: [Ingest — Logs]
+      servers:
+        - url: https://ingest.logs.qeet.in
+        - url: http://localhost:8101
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+              example: "<34>1 2024-01-15T10:00:00Z host authd - - - Authentication failure"
+      responses:
+        "202": {description: Accepted}
+        "401": {description: Unauthorized}
+  /v1/logs:
+    post:
+      summary: OTLP/HTTP log export
+      description: |
+        Accepts `ExportLogsServiceRequest` in JSON (`application/json`) or
+        protobuf (`application/x-protobuf`) encoding (Module 02.1).
+        Requires `logs:ingest` scope.
+      tags: [Ingest — Logs]
+      servers:
+        - url: https://ingest.logs.qeet.in
+        - url: http://localhost:8101
+        - url: http://localhost:4318
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: OTLP ExportLogsServiceRequest (JSON encoding).
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+              description: OTLP ExportLogsServiceRequest (protobuf encoding).
+      responses:
+        "202": {description: Accepted}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+  # ── Ingest — metrics ───────────────────────────────────────────────────────
+  /v1/metrics:
+    post:
+      summary: OTLP/HTTP metric export
+      description: |
+        Accepts `ExportMetricsServiceRequest` in JSON or protobuf encoding.
+        Supports Gauge, Sum, Histogram, ExponentialHistogram, and Summary data types.
+        Requires `logs:ingest` scope.
+      tags: [Ingest — Metrics]
+      servers:
+        - url: https://ingest.logs.qeet.in
+        - url: http://localhost:8101
+        - url: http://localhost:4318
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: OTLP ExportMetricsServiceRequest (JSON encoding).
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+              description: OTLP ExportMetricsServiceRequest (protobuf encoding).
+      responses:
+        "202": {description: Accepted}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+  /api/v1/write:
+    post:
+      summary: Prometheus remote_write
+      description: |
+        Accepts a Prometheus `WriteRequest` (protobuf + Snappy compression).
+        `__name__` label → `metric_name`; `job`/`service`/`env` labels mapped
+        to canonical columns. Requires `logs:ingest` scope.
+      tags: [Ingest — Metrics]
+      servers:
+        - url: https://ingest.logs.qeet.in
+        - url: http://localhost:8101
+      requestBody:
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+              description: Snappy-compressed Prometheus WriteRequest protobuf.
+      responses:
+        "204": {description: Accepted (no body)}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+  # ── Ingest — traces ────────────────────────────────────────────────────────
+  /v1/traces:
+    post:
+      summary: OTLP/HTTP trace export
+      description: |
+        Accepts `ExportTraceServiceRequest` in JSON or protobuf encoding.
+        Tail-based sampling is applied (`TRACE_SAMPLE_RATE`, default 1.0 = lossless);
+        error spans and outlier spans exceeding `TRACE_SLOW_MS` are always kept.
+        Requires `logs:ingest` scope.
+      tags: [Ingest — Traces]
+      servers:
+        - url: https://ingest.logs.qeet.in
+        - url: http://localhost:8101
+        - url: http://localhost:4318
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: OTLP ExportTraceServiceRequest (JSON encoding).
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+              description: OTLP ExportTraceServiceRequest (protobuf encoding).
+      responses:
+        "202": {description: Accepted}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-Qeet-Api-Key
+      description: Tenant API key issued by the Qeet Logs console.
+    BearerJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Qeet ID OIDC access token.
+  schemas:
+    IngestRecord:
+      type: object
+      required: [service, message]
+      description: |
+        Single log record sent to `POST /v1/ingest`. Recognised fields are
+        promoted to typed columns; any extra top-level keys are stored in the
+        structured `body` JSON column. Remap transforms are applied before storage.
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: Defaults to ingest time when omitted.
+        service:
+          type: string
+        level:
+          type: string
+          enum: [trace, debug, info, warn, error, fatal]
+          default: info
+        message:
+          type: string
+          description: Human-readable log message (the canonical text column).
+        trace_id:
+          type: string
+        span_id:
+          type: string
+        environment:
+          type: string
+        user_id:
+          type: string
+          description: Pseudonymised before storage; never stored raw.
+        git_sha:
+          type: string
+        deploy_id:
+          type: string
+        pr_number:
+          type: string
+        k8s_namespace:
+          type: string
+        k8s_pod:
+          type: string
+        k8s_node:
+          type: string
+    IngestResponse:
+      type: object
+      properties:
+        accepted:
+          type: integer
+          format: int64
+        dropped:
+          type: integer
+          format: int64
+        errors:
+          type: integer
+          format: int64
+    Error:
+      type: object
+      properties:
+        error:
+          type: string

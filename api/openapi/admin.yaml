@@ -1,0 +1,812 @@
+openapi: 3.1.0
+info:
+  title: Qeet Logs — Admin API
+  version: "2.0"
+  description: |
+    Privacy-first, multi-tenant observability platform — logs, metrics, and traces.
+
+    ## Authentication
+    All endpoints except `/healthz`, `/readyz`, `/version`, and `/shared/**` require
+    authentication via `X-Qeet-Api-Key` header **or** a Bearer JWT issued by Qeet ID.
+
+    ## Servers
+    | Purpose | Production | Local |
+    |---|---|---|
+    | Query / Admin API | `api.logs.qeet.in` | `localhost:8100` |
+    | Ingest gateway | `ingest.logs.qeet.in` | `localhost:8101` |
+    | OTLP/HTTP | `ingest.logs.qeet.in` | `localhost:4318` |
+
+    ## RBAC scopes
+    | Scope | Grants |
+    |---|---|
+    | `logs:ingest` | Write log records, metrics, traces, change events |
+    | `logs:read` | Query stored records, tail, topology, timeline, incidents |
+    | `logs:query` | Same as `logs:read` (alias) |
+    | `logs:admin` | Admin operations — API keys, transforms, erasure, dashboards |
+    | `logs:platform` | Cross-tenant operations (Qeet operators only) |
+  contact:
+    name: Qeet Group
+    url: https://qeet.in
+  license:
+    name: Proprietary
+servers:
+  - url: https://api.logs.qeet.in
+    description: Production — query & admin
+  - url: http://localhost:8100
+    description: Local dev — query API
+security:
+  - ApiKey: []
+  - BearerJWT: []
+tags:
+  - name: Admin — API Keys
+  - name: Admin — Alerting
+  - name: Admin — Retention
+  - name: Admin — Transform
+    description: VRL-inspired per-tenant remap/transform engine.
+  - name: Admin — Erasure
+    description: DPDP / GDPR data-subject erasure requests.
+  - name: Admin — Dashboards
+  - name: Admin — Saved Searches
+  - name: Admin — Audit
+  - name: Admin — DLQ
+  - name: Admin — Quota
+paths:
+  # ── Admin — API Keys ───────────────────────────────────────────────────────
+  /v1/admin/api-keys:
+    get:
+      summary: List API keys for the tenant
+      tags: [Admin — API Keys]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items: {$ref: '#/components/schemas/APIKey'}
+    post:
+      summary: Create an API key
+      tags: [Admin — API Keys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scopes]
+              properties:
+                name: {type: string}
+                scopes:
+                  type: array
+                  items: {type: string}
+      responses:
+        "201":
+          description: Created — includes full key value
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/APIKey'}
+  /v1/admin/api-keys/{id}:
+    delete:
+      summary: Revoke an API key
+      tags: [Admin — API Keys]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200": {description: Revoked}
+        "404": {description: Not found}
+  # ── Admin — Alert rules ────────────────────────────────────────────────────
+  /v1/admin/alert-rules:
+    get:
+      summary: List alert rules
+      tags: [Admin — Alerting]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items: {$ref: '#/components/schemas/AlertRule'}
+    post:
+      summary: Create an alert rule
+      tags: [Admin — Alerting]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AlertRule'}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlertRule'}
+  /v1/admin/alert-rules/{id}:
+    delete:
+      summary: Delete an alert rule
+      tags: [Admin — Alerting]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200": {description: Deleted}
+        "404": {description: Not found}
+  # ── Admin — Retention ──────────────────────────────────────────────────────
+  /v1/admin/retention:
+    get:
+      summary: Get retention configuration
+      tags: [Admin — Retention]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RetentionConfig'}
+    put:
+      summary: Update retention configuration
+      tags: [Admin — Retention]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RetentionConfig'}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RetentionConfig'}
+  # ── Admin — Transform ──────────────────────────────────────────────────────
+  /v1/admin/transform:
+    get:
+      summary: Get the tenant remap transform program
+      description: |
+        Returns the currently active transform program, its version, and whether
+        it is enabled. Returns `{"program": "", "version": 0, "enabled": false}`
+        when no program has been set. Requires `logs:admin` scope.
+      tags: [Admin — Transform]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TransformProgram'}
+        "401": {description: Unauthorized}
+    put:
+      summary: Set the tenant remap transform program
+      description: |
+        Compiles and saves the program. An invalid program is rejected (HTTP 400)
+        to prevent a bad program from silently dropping events. Bumps `version`
+        atomically so the gateway picks up the new program without restart.
+        Requires `logs:admin` scope.
+      tags: [Admin — Transform]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TransformProgram'}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [ok]}
+                  version: {type: integer}
+                  enabled: {type: boolean}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+  # ── Admin — Erasure (DPDP) ─────────────────────────────────────────────────
+  /v1/admin/erasure:
+    post:
+      summary: Submit a DPDP data-erasure request
+      description: |
+        Fires `ALTER TABLE … DELETE` ClickHouse mutations (async) to erase
+        records matching the supplied `user_linkage_key` and/or time range
+        across the `logs`, `metrics`, and `traces` tables.
+        Inserts an `erasure_requests` row with a JSON receipt of mutation IDs
+        and affected-row estimates. Mutations are async — ClickHouse processes
+        them in the background. Requires `logs:admin` scope.
+      tags: [Admin — Erasure]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: At least one of `user_linkage_key` or `time_from`/`time_to` is required.
+              properties:
+                user_linkage_key:
+                  type: string
+                  description: Pseudonymous key linking records to a data subject (DPDP §7.1).
+                time_from:
+                  type: string
+                  format: date-time
+                time_to:
+                  type: string
+                  format: date-time
+      responses:
+        "202":
+          description: Erasure accepted — mutations submitted to ClickHouse
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErasureRequest'}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+    get:
+      summary: List prior erasure requests for the tenant
+      description: Returns up to 100 requests ordered by requested_at DESC. Requires `logs:admin` scope.
+      tags: [Admin — Erasure]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  requests:
+                    type: array
+                    items: {$ref: '#/components/schemas/ErasureRequest'}
+        "401": {description: Unauthorized}
+  # ── Admin — Dashboards ─────────────────────────────────────────────────────
+  /v1/admin/dashboards:
+    get:
+      summary: List dashboards
+      tags: [Admin — Dashboards]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dashboards:
+                    type: array
+                    items: {$ref: '#/components/schemas/Dashboard'}
+    post:
+      summary: Create a dashboard
+      tags: [Admin — Dashboards]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Dashboard'}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Dashboard'}
+  /v1/admin/dashboards/{id}:
+    get:
+      summary: Get a dashboard
+      tags: [Admin — Dashboards]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Dashboard'}
+        "404": {description: Not found}
+    put:
+      summary: Update a dashboard (replaces panels)
+      tags: [Admin — Dashboards]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Dashboard'}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Dashboard'}
+    delete:
+      summary: Delete a dashboard
+      tags: [Admin — Dashboards]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200": {description: Deleted}
+  /v1/admin/dashboards/{id}/share:
+    post:
+      summary: Mint a public share token for a dashboard
+      description: |
+        Generates a stable random token stored on the dashboard row. Calling
+        again returns the same token. The public URL is `/shared/dashboards/{token}`.
+        Requires `logs:admin` scope.
+      tags: [Admin — Dashboards]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: {type: string}
+                  path: {type: string, example: /shared/dashboards/abc123def456}
+        "404": {description: Dashboard not found}
+  # ── Admin — Saved Searches ─────────────────────────────────────────────────
+  /v1/admin/saved-searches:
+    get:
+      summary: List saved searches
+      tags: [Admin — Saved Searches]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  searches:
+                    type: array
+                    items: {$ref: '#/components/schemas/SavedSearch'}
+    post:
+      summary: Create a saved search
+      tags: [Admin — Saved Searches]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SavedSearch'}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SavedSearch'}
+  /v1/admin/saved-searches/{id}:
+    delete:
+      summary: Delete a saved search
+      tags: [Admin — Saved Searches]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200": {description: Deleted}
+  # ── Admin — Audit ──────────────────────────────────────────────────────────
+  /v1/admin/audit:
+    get:
+      summary: List audit log entries
+      description: Tamper-evident audit trail of all query and admin operations. Requires `logs:admin` scope.
+      tags: [Admin — Audit]
+      parameters:
+        - name: actor
+          in: query
+          schema: {type: string}
+        - name: action
+          in: query
+          schema: {type: string}
+        - name: from
+          in: query
+          schema: {type: string, format: date-time}
+        - name: to
+          in: query
+          schema: {type: string, format: date-time}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 100}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items: {$ref: '#/components/schemas/AuditEntry'}
+  # ── Admin — DLQ ────────────────────────────────────────────────────────────
+  /v1/admin/dlq:
+    get:
+      summary: List dead-letter queue events
+      tags: [Admin — DLQ]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, replayed, dropped]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: {$ref: '#/components/schemas/DLQEvent'}
+                  total:
+                    type: integer
+                    format: int64
+  /v1/admin/dlq/{id}/replay:
+    post:
+      summary: Replay a DLQ event
+      description: Re-publishes the raw payload to NATS for another write attempt.
+      tags: [Admin — DLQ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+                  id: {type: string}
+        "404": {description: Event not found or not pending}
+  /v1/admin/dlq/{id}:
+    delete:
+      summary: Drop a DLQ event
+      tags: [Admin — DLQ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200": {description: Dropped}
+        "404": {description: Not found}
+  # ── Admin — Quota ──────────────────────────────────────────────────────────
+  /v1/admin/quota/usage:
+    get:
+      summary: Get current billing-period quota usage
+      description: Returns calendar-month event count and estimated bytes from ClickHouse.
+      tags: [Admin — Quota]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QuotaUsage'}
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-Qeet-Api-Key
+      description: Tenant API key issued by the Qeet Logs console.
+    BearerJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Qeet ID OIDC access token.
+  schemas:
+    ErasureRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        tenant_id:
+          type: string
+          format: uuid
+          readOnly: true
+        user_linkage_key:
+          type: string
+          description: Pseudonymous key that links records to a data subject.
+        time_from:
+          type: string
+          format: date-time
+          description: Optional time-range lower bound (RFC 3339).
+        time_to:
+          type: string
+          format: date-time
+          description: Optional time-range upper bound (RFC 3339).
+        status:
+          type: string
+          enum: [pending, completed, failed]
+          readOnly: true
+        receipt:
+          type: object
+          description: ClickHouse mutation IDs and row counts per table.
+          readOnly: true
+          additionalProperties: true
+        requested_at:
+          type: string
+          format: date-time
+          readOnly: true
+        completed_at:
+          type: [string, "null"]
+          format: date-time
+          readOnly: true
+    TransformProgram:
+      type: object
+      properties:
+        program:
+          type: string
+          description: |
+            VRL-inspired remap program applied to every event before storage.
+            Statements: `set .field = expr`, `del .field`, `redact .field`,
+            `rename .old .new`, functions: `to_string/to_int/to_float/upcase/downcase/concat/coalesce`.
+            Conditionals: `if .field == "val" set .other = expr`.
+            Routing: `if .level == "error" route "traces"`.
+            Hard cap: 200 statements. Fail-open (bad statements skipped, never drops events).
+        version:
+          type: integer
+          readOnly: true
+        enabled:
+          type: boolean
+    AlertRule:
+      type: object
+      required: [name, kind, query, threshold_count, window_minutes, channels]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        tenant_id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [threshold, absence]
+        query:
+          type: string
+          description: LogQL++ filter expression evaluated by the alerter.
+        threshold_count:
+          type: integer
+          description: Fire if count exceeds (threshold) or equals 0 (absence) in the window.
+        window_minutes:
+          type: integer
+        service:
+          type: [string, "null"]
+          description: Scope rule to a specific service. Omit for tenant-wide.
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertChannel'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    AlertChannel:
+      type: object
+      required: [type, target]
+      properties:
+        type:
+          type: string
+          enum: [webhook, notify]
+        target:
+          type: string
+    RetentionConfig:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+          readOnly: true
+        retention_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        pii_mask_fields:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [mask, hash, drop_field, drop_record]
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    APIKey:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+            enum: ['logs:ingest', 'logs:read', 'logs:query', 'logs:admin', 'logs:platform']
+        prefix:
+          type: string
+          description: First 8 chars of the key for display. Full key returned only on creation.
+        key:
+          type: string
+          description: Present only in CreateAPIKey response. Store it; it cannot be retrieved again.
+        created_at:
+          type: string
+          format: date-time
+    Dashboard:
+      type: object
+      required: [name]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        tenant_id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+        panels:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardPanel'
+        share_token:
+          type: [string, "null"]
+          description: Present after `POST /v1/admin/dashboards/{id}/share`.
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    DashboardPanel:
+      type: object
+      required: [id, kind, title, query]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [line, bar, table, stat]
+        title:
+          type: string
+        query:
+          type: string
+          description: LogQL++ or PromQL query string rendered by this panel.
+    SavedSearch:
+      type: object
+      required: [name, query]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        tenant_id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+        query:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    QuotaUsage:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+        events:
+          type: integer
+          format: int64
+        bytes_stored:
+          type: integer
+          format: int64
+        retention_days:
+          type: integer
+    DLQEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        payload:
+          type: object
+        error_msg:
+          type: string
+        attempt:
+          type: integer
+        status:
+          type: string
+          enum: [pending, replayed, dropped]
+        created_at:
+          type: string
+          format: date-time
+        replayed_at:
+          type: [string, "null"]
+          format: date-time
+    AuditEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        actor:
+          type: string
+        action:
+          type: string
+        resource:
+          type: string
+        resource_id:
+          type: string
+        status:
+          type: string
+          enum: [ok, denied, error]
+        ip:
+          type: string
+        user_agent:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      properties:
+        error:
+          type: string

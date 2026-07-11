@@ -1,0 +1,808 @@
+openapi: 3.1.0
+info:
+  title: Qeet Logs — Query & Investigation API
+  version: "2.0"
+  description: |
+    Privacy-first, multi-tenant observability platform — logs, metrics, and traces.
+
+    ## Authentication
+    All endpoints except `/healthz`, `/readyz`, `/version`, and `/shared/**` require
+    authentication via `X-Qeet-Api-Key` header **or** a Bearer JWT issued by Qeet ID.
+
+    ## Servers
+    | Purpose | Production | Local |
+    |---|---|---|
+    | Query / Admin API | `api.logs.qeet.in` | `localhost:8100` |
+    | Ingest gateway | `ingest.logs.qeet.in` | `localhost:8101` |
+    | OTLP/HTTP | `ingest.logs.qeet.in` | `localhost:4318` |
+
+    ## RBAC scopes
+    | Scope | Grants |
+    |---|---|
+    | `logs:ingest` | Write log records, metrics, traces, change events |
+    | `logs:read` | Query stored records, tail, topology, timeline, incidents |
+    | `logs:query` | Same as `logs:read` (alias) |
+    | `logs:admin` | Admin operations — API keys, transforms, erasure, dashboards |
+    | `logs:platform` | Cross-tenant operations (Qeet operators only) |
+  contact:
+    name: Qeet Group
+    url: https://qeet.in
+  license:
+    name: Proprietary
+servers:
+  - url: https://api.logs.qeet.in
+    description: Production — query & admin
+  - url: http://localhost:8100
+    description: Local dev — query API
+security:
+  - ApiKey: []
+  - BearerJWT: []
+tags:
+  - name: Query
+    description: LogQL++ queries, live-tail, NL-to-query.
+  - name: PromQL
+    description: Prometheus HTTP API compatible metric queries (Grafana compatible).
+  - name: Changes
+    description: Deploy and change-event ingestion and query.
+  - name: Topology
+    description: Service dependency graph and blast-radius analysis.
+  - name: Timeline
+    description: Unified cross-signal investigation timeline.
+  - name: Incidents
+    description: Correlation-first incident feed.
+  - name: RCA
+    description: Root-cause analysis — structural retrieval.
+  - name: Dashboards
+    description: Dashboard overlays and public sharing.
+paths:
+  # ── Query ──────────────────────────────────────────────────────────────────
+  /v1/query:
+    get:
+      summary: LogQL++ query
+      description: |
+        Queries stored records across `logs`, `metrics`, `traces`, `auth_events`,
+        and `change_events` tables using LogQL++. Returns JSON (default), CSV
+        (`?format=csv`), or NDJSON (`?format=ndjson`).
+        Tenant predicate is always injected from authenticated identity — never
+        from the query string (TAD §7.2). Requires `logs:read` scope.
+      tags: [Query]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: LogQL++ expression (e.g. `service="payments" | level="error"`)
+          schema: {type: string}
+        - name: from
+          in: query
+          schema: {type: string, format: date-time}
+        - name: to
+          in: query
+          schema: {type: string, format: date-time}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 100, maximum: 1000}
+        - name: services
+          in: query
+          schema: {type: string, description: Comma-separated service filter.}
+        - name: level
+          in: query
+          schema: {type: string, enum: [trace, debug, info, warn, error, fatal]}
+        - name: format
+          in: query
+          schema: {type: string, enum: [json, csv, ndjson], default: json}
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueryResponse'}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+        "403": {description: 'Missing logs:read scope'}
+  /v1/query/tail:
+    get:
+      summary: Live-tail log stream (WebSocket)
+      description: |
+        Upgrades to a **WebSocket** and streams real-time log records from Redis
+        pub/sub for the authenticated tenant. Supply a `TAIL` LogQL++ statement via
+        `?q=` (the `logs` table only); each matching record is written as a JSON
+        text frame. There is no separate `service`/`level` param — filter inside the
+        `TAIL … WHERE …` clause. Requires `logs:read` (or `logs:query`) scope.
+
+        Connect with a WebSocket client, e.g.:
+        `wss://api.logs.qeet.in/v1/query/tail?q=TAIL FROM logs WHERE level="error"`
+        (send the API key via the `X-Qeet-Api-Key` header on the upgrade request).
+      tags: [Query]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: A `TAIL FROM logs [WHERE …]` LogQL++ statement.
+          schema: {type: string}
+      responses:
+        "101":
+          description: Switching Protocols — WebSocket established; each frame is a JSON-encoded log record.
+        "400":
+          description: Missing/invalid `q`, or not a `TAIL` statement over the `logs` table
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+        "403": {description: Missing logs:read or logs:query scope}
+  /v1/query/nl:
+    post:
+      summary: Natural-language to LogQL++ (AI-assisted)
+      description: |
+        Sends a free-text question to `claude-sonnet-5` with full LogQL++ schema
+        context and returns a generated query plus explanation. The query is
+        inspectable and editable before execution. Returns 501 when
+        `ANTHROPIC_API_KEY` is not configured. Requires `logs:read` scope.
+      tags: [Query]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NLQueryRequest'}
+      responses:
+        "200":
+          description: Generated query
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NLQueryResponse'}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+        "501":
+          description: ANTHROPIC_API_KEY not configured
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  # ── PromQL ─────────────────────────────────────────────────────────────────
+  /api/v1/query:
+    get:
+      summary: PromQL instant query
+      description: |
+        Prometheus HTTP API compatible instant query over the metrics store.
+        Point a Grafana Prometheus data source at `api.logs.qeet.in` and it works
+        unchanged. Tenant is always injected from identity (not from query).
+        Requires `logs:read` scope.
+      tags: [PromQL]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: PromQL expression (e.g. `sum by (service)(rate(http_requests_total[5m]))`)
+          schema: {type: string}
+        - name: time
+          in: query
+          description: Evaluation timestamp (Unix seconds or RFC 3339). Defaults to now.
+          schema: {type: string}
+      responses:
+        "200":
+          description: Instant vector result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PromResponse'}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+  /api/v1/query_range:
+    get:
+      summary: PromQL range query
+      description: |
+        Prometheus HTTP API compatible range query. Returns a matrix of per-step
+        values. Requires `logs:read` scope.
+      tags: [PromQL]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema: {type: string}
+        - name: start
+          in: query
+          required: true
+          schema: {type: string}
+        - name: end
+          in: query
+          required: true
+          schema: {type: string}
+        - name: step
+          in: query
+          description: Step duration in seconds or Prometheus duration string (e.g. `30s`, `5m`).
+          schema: {type: string, default: "60"}
+      responses:
+        "200":
+          description: Matrix result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PromResponse'}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+  # ── Auth events ────────────────────────────────────────────────────────────
+  /v1/auth-events:
+    get:
+      summary: Query Qeet ID auth events
+      description: Requires `logs:read` scope.
+      tags: [Query]
+      parameters:
+        - name: from
+          in: query
+          schema: {type: string, format: date-time}
+        - name: to
+          in: query
+          schema: {type: string, format: date-time}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 100}
+      responses:
+        "200":
+          description: Auth events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  rows:
+                    type: array
+                    items: {type: object, additionalProperties: true}
+  # ── Change events ──────────────────────────────────────────────────────────
+  /v1/changes:
+    post:
+      summary: Record a deploy / change event
+      description: |
+        Stores a typed change event (deploy, flag, config, rollback) used by the
+        investigation timeline, RCA, and alert correlation.
+        Requires `logs:ingest` scope.
+      tags: [Changes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeEvent'}
+      responses:
+        "201":
+          description: Change event created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+                  kind: {type: string}
+                  timestamp: {type: string, format: date-time}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+    get:
+      summary: List change events
+      description: Requires `logs:read` scope.
+      tags: [Changes]
+      parameters:
+        - name: service
+          in: query
+          schema: {type: string}
+        - name: since
+          in: query
+          schema: {type: string, format: date-time}
+        - name: kind
+          in: query
+          schema: {type: string, enum: [deploy, flag, config, rollback]}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  events:
+                    type: array
+                    items: {$ref: '#/components/schemas/ChangeEvent'}
+  # ── Topology ───────────────────────────────────────────────────────────────
+  /v1/topology:
+    get:
+      summary: Service dependency graph
+      description: |
+        Derives the topology from cross-service span parent↔child relationships
+        (traces) and log-based service inference (multi-signal, Module 10).
+        Returns nodes with coverage flags and edges with call/error/p95 stats.
+        With `?service=`, also returns a blast-radius (transitive upstream callers).
+        Requires `logs:read` scope.
+      tags: [Topology]
+      parameters:
+        - name: since
+          in: query
+          description: Look-back window in seconds (default 3600).
+          schema: {type: integer, default: 3600}
+        - name: service
+          in: query
+          description: Focus service — blast-radius is computed for this node.
+          schema: {type: string}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TopologyGraph'}
+        "401": {description: Unauthorized}
+  # ── Timeline ───────────────────────────────────────────────────────────────
+  /v1/timeline:
+    get:
+      summary: Unified investigation timeline
+      description: |
+        Merges logs, spans, and deploy events into a single time-sorted feed
+        (Module 09.1/09.2). Two modes:
+        - `?trace_id=T` — full cross-signal story for one request
+        - `?service=S&since=...` — warn+ logs, error spans, and deploy overlays
+          for a service window
+        Requires `logs:read` scope.
+      tags: [Timeline]
+      parameters:
+        - name: trace_id
+          in: query
+          description: Trace ID to focus on (trace-scoped mode).
+          schema: {type: string}
+        - name: service
+          in: query
+          description: Service to investigate (window mode).
+          schema: {type: string}
+        - name: since
+          in: query
+          description: Window start (RFC 3339). Defaults to 1 hour ago.
+          schema: {type: string, format: date-time}
+        - name: include_info
+          in: query
+          description: Include info-level log events (default false).
+          schema: {type: boolean, default: false}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  events:
+                    type: array
+                    items: {$ref: '#/components/schemas/TimelineEvent'}
+        "401": {description: Unauthorized}
+  # ── Incidents ──────────────────────────────────────────────────────────────
+  /v1/incidents:
+    get:
+      summary: List open incidents
+      description: |
+        Returns open (and optionally resolved) incidents for the tenant, ordered
+        by last_seen DESC. Incidents are opened by the alerter correlation engine
+        and deduped by fingerprint (Module 13.2). Requires `logs:read` scope.
+      tags: [Incidents]
+      parameters:
+        - name: status
+          in: query
+          schema: {type: string, enum: [open, resolved, all], default: open}
+        - name: service
+          in: query
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  incidents:
+                    type: array
+                    items: {$ref: '#/components/schemas/Incident'}
+        "401": {description: Unauthorized}
+  # ── RCA ────────────────────────────────────────────────────────────────────
+  /v1/rca:
+    get:
+      summary: Root-cause analysis — structural retrieval
+      description: |
+        Returns ranked root-cause candidates for a service or open incident
+        (Module 11.1). Candidates are deploy-proximity (recent deploys near
+        the incident) and dependency-proximity (downstream callees with errors).
+        Each candidate carries an inspectable `evidence` object.
+        Requires `logs:read` scope.
+      tags: [RCA]
+      parameters:
+        - name: service
+          in: query
+          description: Service to investigate (mutually exclusive with `incident_id`).
+          schema: {type: string}
+        - name: incident_id
+          in: query
+          description: Open incident UUID (mutually exclusive with `service`).
+          schema: {type: string, format: uuid}
+        - name: since
+          in: query
+          description: Look-back window start (RFC 3339). Defaults to 1 hour ago.
+          schema: {type: string, format: date-time}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RCAResult'}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+  # ── Dashboard overlays ─────────────────────────────────────────────────────
+  /v1/overlays:
+    get:
+      summary: Correlation overlay markers for dashboards
+      description: |
+        Returns deploy/change markers (from ClickHouse) and incident windows
+        (open + recently resolved, from Postgres) for a given time range and
+        optional service filter. Used by panel-rendering clients to overlay
+        events on time-series charts (Module 22.2). Requires `logs:read` scope.
+      tags: [Dashboards]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: {type: string, format: date-time}
+        - name: to
+          in: query
+          required: true
+          schema: {type: string, format: date-time}
+        - name: service
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  markers:
+                    type: array
+                    items: {$ref: '#/components/schemas/OverlayMarker'}
+        "401": {description: Unauthorized}
+  # ── Shared dashboard (public) ──────────────────────────────────────────────
+  /shared/dashboards/{token}:
+    get:
+      summary: Read a shared dashboard (public, no auth)
+      description: |
+        Returns the name and panel definitions of a shared dashboard identified
+        by its stable share token. No API key required — seat-free embed/share
+        (Module 22.3).
+      security: []
+      tags: [Dashboards]
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SharedDashboard'}
+        "404": {description: Token not found or dashboard deleted}
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-Qeet-Api-Key
+      description: Tenant API key issued by the Qeet Logs console.
+    BearerJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Qeet ID OIDC access token.
+  schemas:
+    QueryResponse:
+      type: object
+      properties:
+        columns:
+          type: array
+          items:
+            type: string
+        count:
+          type: integer
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    PromResponse:
+      type: object
+      description: Prometheus HTTP API envelope (compatible with Grafana data source).
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        data:
+          type: object
+          properties:
+            resultType:
+              type: string
+              enum: [vector, matrix]
+            result:
+              type: array
+              items:
+                type: object
+    ChangeEvent:
+      type: object
+      required: [kind, service]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          type: string
+          enum: [deploy, flag, config, rollback]
+        service:
+          type: string
+        environment:
+          type: string
+        git_sha:
+          type: string
+        deploy_id:
+          type: string
+        pr_number:
+          type: string
+        flag_key:
+          type: string
+        config_diff:
+          type: string
+        author:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+          readOnly: true
+    TopologyNode:
+      type: object
+      properties:
+        service:
+          type: string
+        call_count:
+          type: integer
+          format: int64
+        error_count:
+          type: integer
+          format: int64
+        coverage:
+          type: string
+          enum: [full, traces-only, logs-only]
+    TopologyEdge:
+      type: object
+      properties:
+        caller:
+          type: string
+        callee:
+          type: string
+        call_count:
+          type: integer
+          format: int64
+        error_count:
+          type: integer
+          format: int64
+        p95_ms:
+          type: number
+          format: double
+    TopologyGraph:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopologyNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopologyEdge'
+        focus:
+          type: string
+          description: Service that blast-radius was scoped to, if `service=` was given.
+        blast_radius:
+          type: array
+          items:
+            type: string
+          description: Transitive upstream callers of `focus`.
+    TimelineEvent:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [log, span, deploy]
+        timestamp:
+          type: string
+          format: date-time
+        service:
+          type: string
+        level:
+          type: string
+        message:
+          type: string
+        trace_id:
+          type: string
+        span_id:
+          type: string
+        duration_ms:
+          type: number
+          format: double
+        status_code:
+          type: string
+        deploy_id:
+          type: string
+        git_sha:
+          type: string
+    Incident:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        fingerprint:
+          type: string
+        title:
+          type: string
+        service:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        status:
+          type: string
+          enum: [open, resolved]
+        signal_count:
+          type: integer
+        paged:
+          type: boolean
+        deploy_id:
+          type: [string, "null"]
+        correlated_rules:
+          type: array
+          items:
+            type: string
+        opened_at:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        resolved_at:
+          type: [string, "null"]
+          format: date-time
+    RCACandidate:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [deploy, dependency]
+        score:
+          type: number
+          format: double
+          description: Relevance score 0–1 (higher = more likely root cause).
+        service:
+          type: string
+        deploy_id:
+          type: string
+        git_sha:
+          type: string
+        evidence:
+          type: object
+          description: Supporting signals (timestamps, error counts, p95, etc.)
+          additionalProperties: true
+    RCAResult:
+      type: object
+      properties:
+        service:
+          type: string
+        since:
+          type: string
+          format: date-time
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/RCACandidate'
+    OverlayMarker:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [deploy, incident_open, incident_resolved]
+        timestamp:
+          type: string
+          format: date-time
+        service:
+          type: string
+        label:
+          type: string
+        meta:
+          type: object
+          additionalProperties: true
+    NLQueryRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+          description: Free-text question in natural language.
+          example: "Show me all errors from the payments service in the last hour"
+    NLQueryResponse:
+      type: object
+      properties:
+        loqlpp:
+          type: string
+          description: Generated LogQL++ query — inspectable and editable before execution.
+        explanation:
+          type: string
+          description: Human-readable explanation of what the query does and why.
+    SharedDashboard:
+      type: object
+      properties:
+        name:
+          type: string
+        panels:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardPanel'
+    DashboardPanel:
+      type: object
+      required: [id, kind, title, query]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [line, bar, table, stat]
+        title:
+          type: string
+        query:
+          type: string
+          description: LogQL++ or PromQL query string rendered by this panel.
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
