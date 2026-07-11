@@ -157,3 +157,18 @@ F: G14, G15, G16, G17, G18 (largely parallel)
 ```
 
 **Recommended first: G1** (additive ClickHouse migrations — zero risk to existing code, unblocks the most downstream work).
+
+---
+
+## Post-Phase-1 completions
+
+**Integration test suite — Phase-1 coverage** ✅ — Two new `//go:build integration` files in `platform/clickhouse/`:
+- `signals_integration_test.go` — 5 tests: metrics insert+query+rollup table existence, traces insert+cross-signal log↔span join, change_events insert+filter, cardinality `uniqExact` guard, cross-signal timeline row presence.
+- `query_integration_test.go` — 3 tests: LogQL++ end-to-end (compile→CH execute, logs+metrics+aggregation), PromQL instant+range end-to-end, tenant isolation (row from tenant A never visible to tenant B query).
+- All tests skip gracefully when `make infra-up` is not running (`c.Ping` check). Run with `make test-integration`.
+
+**OpenAPI spec — Phase-1 parity** ✅ — `api/openapi/openapi.yaml` bumped to v2.0. Added:
+- **New schemas**: `IngestRecord` (flat `message` field — fixes old `{"records":[...]}` contract), `MetricIngestRecord`, `SpanIngestRecord`, `IngestResponse`, `ChangeEvent`, `TopologyNode/Edge/Graph`, `TimelineEvent`, `Incident`, `RCACandidate/Result`, `OverlayMarker`, `ErasureRequest`, `NLQueryRequest/Response`, `TransformProgram`, `SharedDashboard`.
+- **New paths** (20+): `/v1/ingest/batch` (NDJSON), `/v1/ingest/gelf`, `/v1/ingest/syslog`, `/v1/logs`, `/v1/metrics`, `/api/v1/write`, `/v1/traces`, `/api/v1/query`, `/api/v1/query_range`, `/v1/query/nl`, `/v1/changes`, `/v1/topology`, `/v1/timeline`, `/v1/incidents`, `/v1/rca`, `/v1/overlays`, `/shared/dashboards/{token}`, `/v1/admin/transform`, `/v1/admin/erasure`, `/v1/admin/dashboards/{id}/share`.
+- **New tags**: Ingest — Logs/Metrics/Traces, PromQL, Changes, Topology, Timeline, Incidents, RCA, Dashboards, Admin — Transform, Admin — Erasure.
+- **Ingest server** split: ingest-gateway endpoints (`ingest.logs.qeet.in` / `:8101`) documented separately from query API (`api.logs.qeet.in` / `:8100`).
