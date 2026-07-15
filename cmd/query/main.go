@@ -103,6 +103,9 @@ func main() {
 		// RCA structural retrieval (Module 11.1)
 		rt.Get("/rca", handler.RCA(ch, pool))
 
+		// Deployment Intelligence — ranked culprit scoring + health + rollback (Module 15.2–15.4)
+		rt.Get("/deploy/culprits", handler.DeployCulprits(ch, pool))
+
 		// Correlation-aware panel overlays (Module 22.2)
 		rt.Get("/overlays", handler.Overlays(ch, pool))
 
