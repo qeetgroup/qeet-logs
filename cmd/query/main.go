@@ -41,6 +41,14 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// Distributed tracing — opt-in, no-op unless OTEL_EXPORTER_OTLP_ENDPOINT set.
+	shutdownTracing, tracingOn, err := observability.InitTracing(ctx, "qeet-logs-query", version)
+	if err != nil {
+		log.Fatal().Err(err).Msg("init tracing")
+	}
+	defer func() { _ = shutdownTracing(context.Background()) }()
+	log.Info().Bool("tracing", tracingOn).Msg("observability configured")
+
 	pool, err := database.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal().Err(err).Msg("connect to postgres")
@@ -79,6 +87,7 @@ func main() {
 	// Security + observability baseline (product-readiness).
 	r.Use(apimw.SecureHeaders)                           // OWASP secure-header set
 	r.Use(apimw.MaxBodyBytes(apimw.DefaultMaxBodyBytes)) // 4 MiB request-body cap
+	r.Use(observability.Tracing)                         // OTel server spans (opt-in)
 	r.Use(observability.Metrics)                         // Prometheus RED metrics
 
 	r.Get("/healthz", handler.Health)
