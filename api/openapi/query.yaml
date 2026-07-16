@@ -54,6 +54,24 @@ tags:
     description: Root-cause analysis — structural retrieval.
   - name: Dashboards
     description: Dashboard overlays and public sharing.
+  - name: Deploy
+    description: Deployment intelligence — ranked culprit scoring, health delta, rollback.
+  - name: Business Context
+    description: Business-impact exposure for services and incidents.
+  - name: Export
+    description: Bulk / programmatic export of query results.
+  - name: Alerts
+    description: Alert routing-rule simulation.
+  - name: Analytics
+    description: Product-adoption analytics (Time To First Independent Query).
+  - name: Forecast
+    description: Predictive observability — statistical capacity/exhaustion + trend.
+  - name: Copilot
+    description: Governed LLM copilot — single-shot and conversational.
+  - name: Loki
+    description: Grafana Loki-compatible read data source.
+  - name: ChatOps
+    description: Two-way Slack ChatOps — install, OAuth callback, slash-commands, interactivity (Slack-signature auth).
 paths:
   # ── Query ──────────────────────────────────────────────────────────────────
   /v1/query:
@@ -196,6 +214,33 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         "401": {description: Unauthorized}
+    post:
+      summary: PromQL instant query (form-encoded)
+      description: |
+        Same as the `GET` form — Prometheus/Grafana data sources may POST the
+        query as `application/x-www-form-urlencoded`. Requires `logs:read` scope.
+      tags: [PromQL]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                query: {type: string}
+                time: {type: string}
+      responses:
+        "200":
+          description: Instant vector result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PromResponse'}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
   /api/v1/query_range:
     get:
       summary: PromQL range query
@@ -220,6 +265,35 @@ paths:
           in: query
           description: Step duration in seconds or Prometheus duration string (e.g. `30s`, `5m`).
           schema: {type: string, default: "60"}
+      responses:
+        "200":
+          description: Matrix result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PromResponse'}
+        "400":
+          description: Invalid request body or parameters
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+    post:
+      summary: PromQL range query (form-encoded)
+      description: |
+        Same as the `GET` form — Prometheus/Grafana data sources may POST the
+        query as `application/x-www-form-urlencoded`. Requires `logs:read` scope.
+      tags: [PromQL]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                query: {type: string}
+                start: {type: string}
+                end: {type: string}
+                step: {type: string}
       responses:
         "200":
           description: Matrix result
@@ -320,6 +394,63 @@ paths:
                   events:
                     type: array
                     items: {$ref: '#/components/schemas/ChangeEvent'}
+  /v1/changes/{provider}:
+    post:
+      summary: Ingest a provider webhook as change events
+      description: |
+        Receives a raw CI/CD, feature-flag, or config webhook, translates it into
+        the normalized change-event contract, and stores the resulting events in
+        `change_events` (feeding the timeline, RCA, and Deployment Intelligence).
+        Supported `provider` values: `github`, `gitlab`, `launchdarkly` (`ld`).
+        GitHub carries the event type in the `X-GitHub-Event` header; other
+        providers self-describe. A recognised but non-actionable payload is
+        acknowledged with `200 {accepted: 0}` so the provider does not retry.
+        Requires `logs:ingest` scope.
+      tags: [Changes]
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: {type: string, enum: [github, gitlab, launchdarkly, ld]}
+        - name: X-GitHub-Event
+          in: header
+          description: GitHub event type (e.g. `deployment`, `workflow_run`, `push`). GitHub only.
+          schema: {type: string}
+      requestBody:
+        required: true
+        description: The raw provider webhook payload (shape varies by provider).
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        "201":
+          description: Change event(s) recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted: {type: integer}
+                  provider: {type: string}
+                  ids:
+                    type: array
+                    items: {type: string}
+        "200":
+          description: Payload recognised but non-actionable — acknowledged, nothing recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted: {type: integer, example: 0}
+                  provider: {type: string}
+        "400":
+          description: Unknown provider or unparseable payload
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+        "403": {description: 'Missing logs:ingest scope'}
   # ── Topology ───────────────────────────────────────────────────────────────
   /v1/topology:
     get:
@@ -513,6 +644,620 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/SharedDashboard'}
         "404": {description: Token not found or dashboard deleted}
+  # ── Deploy (deployment intelligence) ────────────────────────────────────────
+  /v1/deploy/culprits:
+    get:
+      summary: Ranked deploy/change culprits for a service
+      description: |
+        Scores recent change events (deploy/flag/config/rollback) for a service by
+        likelihood of having caused a regression (Module 15.2–15.4): recency ×
+        change-type weight × measured before/after error-rate delta. The top
+        degraded deploy carries a one-click rollback suggestion. Provide `service`,
+        or `incident_id` to resolve the service from an incident. Requires
+        `logs:read` (or `logs:query`) scope.
+      tags: [Deploy]
+      parameters:
+        - name: service
+          in: query
+          description: Service to rank culprits for (required unless `incident_id` is given).
+          schema: {type: string}
+        - name: incident_id
+          in: query
+          description: Resolve the service from this incident when `service` is absent.
+          schema: {type: string, format: uuid}
+        - name: since
+          in: query
+          description: Look-back window in seconds (default 3600).
+          schema: {type: integer, default: 3600}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CulpritResult'}
+        "400":
+          description: service or incident_id required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+        "403": {description: Missing logs:read or logs:query scope}
+  # ── Business Context ─────────────────────────────────────────────────────────
+  /v1/business-context:
+    get:
+      summary: Business-context mappings + exposure for a service
+      description: |
+        Returns the tenant's business-context mappings for a service (customer,
+        plan-tier, monthly revenue, SLA target) plus the derived business-impact
+        `exposure` (affected plan tiers, qualified revenue-at-risk range, strictest
+        SLA). Requires `logs:read` (or `logs:query`) scope.
+      tags: [Business Context]
+      parameters:
+        - name: service
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service: {type: string}
+                  count: {type: integer}
+                  mappings:
+                    type: array
+                    items: {$ref: '#/components/schemas/BusinessContextMapping'}
+                  exposure: {$ref: '#/components/schemas/Exposure'}
+        "400":
+          description: service query parameter is required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+        "403": {description: Missing logs:read or logs:query scope}
+  /v1/incidents/{id}/context:
+    get:
+      summary: Business exposure for an incident
+      description: |
+        Resolves the incident's service and returns that service's business-context
+        mappings plus the derived `exposure` (Module 16.2). Requires `logs:read`
+        (or `logs:query`) scope.
+      tags: [Business Context]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  incident_id: {type: string, format: uuid}
+                  service: {type: string}
+                  count: {type: integer}
+                  mappings:
+                    type: array
+                    items: {$ref: '#/components/schemas/BusinessContextMapping'}
+                  exposure: {$ref: '#/components/schemas/Exposure'}
+        "401": {description: Unauthorized}
+        "403": {description: Missing logs:read or logs:query scope}
+        "404": {description: Incident not found}
+  # ── Export ─────────────────────────────────────────────────────────────────
+  /v1/export:
+    get:
+      summary: Export query results (bulk / programmatic)
+      description: |
+        Compiles and runs a LogQL++ query for the tenant and streams the full
+        result set as a downloadable file (`Content-Disposition: attachment`),
+        permitting far larger result sets than the interactive `/v1/query` path
+        (Module 8.5). `TAIL` statements are rejected — use `/v1/query/tail`.
+        Requires `logs:export` (or `logs:read`) scope.
+      tags: [Export]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: LogQL++ expression to export.
+          schema: {type: string}
+        - name: format
+          in: query
+          schema: {type: string, enum: [json, csv, ndjson], default: json}
+      responses:
+        "200":
+          description: |
+            Exported result set as a file download. JSON returns
+            `{columns, count, rows}`; `csv`/`ndjson` stream the rows.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueryResponse'}
+            text/csv:
+              schema: {type: string}
+            application/x-ndjson:
+              schema: {type: string}
+        "400":
+          description: Missing q, or a TAIL statement was supplied
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+        "403": {description: Missing logs:export or logs:read scope}
+  # ── Alerts (routing simulation) ──────────────────────────────────────────────
+  /v1/alerts/simulate:
+    post:
+      summary: Simulate alert routing for a synthetic event
+      description: |
+        Loads the tenant's alert rules and runs a pure matcher to report which
+        rules — and therefore which channels/targets — WOULD fire for a synthetic
+        `{service, severity, labels?}` event, without querying ClickHouse or
+        delivering anything (Module 17.4). Requires `logs:read` scope.
+      tags: [Alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RoutingSimRequest'}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RoutingSimResponse'}
+        "400":
+          description: Provide at least one of service, severity, labels
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+        "403": {description: 'Missing logs:read scope'}
+  # ── Analytics (TTFIQ) ─────────────────────────────────────────────────────────
+  /v1/analytics/ttfiq:
+    get:
+      summary: Time To First Independent Query (adoption analytic)
+      description: |
+        Best-effort elapsed time between the tenant's onboarding (earliest
+        `api_keys.created_at`) and its first query audit event, plus a median
+        across API-key cohorts (Module 7.5). Requires `logs:read` scope.
+      tags: [Analytics]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TTFIQResponse'}
+        "401": {description: Unauthorized}
+        "403": {description: 'Missing logs:read scope'}
+  # ── Forecast ─────────────────────────────────────────────────────────────────
+  /v1/forecast:
+    get:
+      summary: Statistical capacity/exhaustion forecast
+      description: |
+        Pulls the recent per-window series for (tenant, service, metric) from the
+        metrics store, fits a deploy-aware least-squares trend, projects when a
+        threshold will breach, and reports an EWMA level + seasonal-naive baseline
+        + deviation (Module 14.1/14.2). Statistics only — no ML. Requires
+        `logs:read` (or `logs:query`) scope.
+      tags: [Forecast]
+      parameters:
+        - name: service
+          in: query
+          required: true
+          schema: {type: string}
+        - name: metric
+          in: query
+          required: true
+          description: metric_name to forecast.
+          schema: {type: string}
+        - name: window
+          in: query
+          description: Bucket size in seconds (default 300, min 10).
+          schema: {type: integer, default: 300}
+        - name: horizon
+          in: query
+          description: Windows ahead to project (default 12).
+          schema: {type: integer, default: 12}
+        - name: threshold
+          in: query
+          description: Optional breach threshold for the capacity projection.
+          schema: {type: number, format: double}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ForecastResponse'}
+        "400":
+          description: service and metric are required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+        "403": {description: Missing logs:read or logs:query scope}
+  # ── Copilot (governed LLM) ────────────────────────────────────────────────────
+  /v1/query/copilot:
+    post:
+      summary: AI copilot — single-shot LogQL++ generation
+      description: |
+        Governed LLM copilot (Module 12). Masks the prompt, calls the model, audits
+        the masked attempt, and returns an inspectable `{loqlpp, explanation}`.
+        403 if the tenant has not opted in (admin enables via
+        `/v1/admin/ai-features`) or the caller lacks `logs:query`. 501 if
+        `ANTHROPIC_API_KEY` is unset.
+      tags: [Copilot]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CopilotRequest'}
+      responses:
+        "200":
+          description: Generated query
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CopilotResponse'}
+        "400":
+          description: Body must be JSON with a non-empty "question" field
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+        "403": {description: Missing logs:query scope, or AI features not enabled for the tenant}
+        "501":
+          description: ANTHROPIC_API_KEY not configured
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /v1/query/copilot/conversations:
+    post:
+      summary: Start a copilot conversation
+      description: |
+        Creates an empty durable conversation for multi-turn copilot use (Module
+        12.2). Same gates as the single-shot copilot: `logs:query` + tenant opt-in.
+      tags: [Copilot]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string}
+      responses:
+        "201":
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+                  created_at: {type: string, format: date-time}
+        "401": {description: Unauthorized}
+        "403": {description: Missing logs:query scope, or AI features not enabled}
+  /v1/query/copilot/conversations/{id}:
+    get:
+      summary: Get a copilot conversation's turns
+      description: Returns the tenant-scoped conversation turn history. Requires `logs:query` + tenant opt-in.
+      tags: [Copilot]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CopilotConversation'}
+        "401": {description: Unauthorized}
+        "403": {description: 'Missing logs:query scope'}
+        "404": {description: Conversation not found}
+  /v1/query/copilot/conversations/{id}/messages:
+    post:
+      summary: Post a message to a copilot conversation
+      description: |
+        Replays the conversation history into a governed LLM call and appends both
+        the user turn and the assistant turn (Module 12.2). 501 if
+        `ANTHROPIC_API_KEY` is unset.
+      tags: [Copilot]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CopilotRequest'}
+      responses:
+        "200":
+          description: Assistant turn
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CopilotMessageResponse'}
+        "400":
+          description: Body must be JSON with a non-empty "question" field
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "401": {description: Unauthorized}
+        "403": {description: Missing logs:query scope, or AI features not enabled}
+        "404": {description: Conversation not found}
+        "501":
+          description: ANTHROPIC_API_KEY not configured
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  # ── Loki (Grafana data source) ─────────────────────────────────────────────
+  /loki/api/v1/query_range:
+    get:
+      summary: Loki-compatible range query
+      description: |
+        Translates a Loki stream selector to LogQL++, runs it over `logs`, and
+        returns Loki's `streams` result shape (Module 22.4). Point a Grafana "Loki"
+        data source at the API host with the `X-Qeet-Api-Key` header. Requires
+        `logs:read` (or `logs:query`) scope.
+      tags: [Loki]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Loki stream selector, e.g. `{service="api", level!="debug"}`.
+          schema: {type: string}
+        - name: start
+          in: query
+          description: Range start — integer nanoseconds, float seconds, or RFC3339.
+          schema: {type: string}
+        - name: end
+          in: query
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer}
+        - name: direction
+          in: query
+          schema: {type: string, enum: [forward, backward]}
+      responses:
+        "200":
+          description: Loki streams result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LokiResponse'}
+        "400":
+          description: Missing/invalid query
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LokiError'}
+        "401": {description: Unauthorized}
+        "403": {description: Missing logs:read or logs:query scope}
+  /loki/api/v1/labels:
+    get:
+      summary: Loki-compatible label keys
+      description: Returns the browsable log label keys (static, fixed by the `logs` schema). Requires `logs:read`/`logs:query`.
+      tags: [Loki]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LokiResponse'}
+        "403": {description: Missing logs:read or logs:query scope}
+  /loki/api/v1/label/{name}/values:
+    get:
+      summary: Loki-compatible label values
+      description: Distinct values for one label via a tenant-scoped DISTINCT query. Requires `logs:read`/`logs:query`.
+      tags: [Loki]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Label key (e.g. `service`, `level`, `environment`).
+          schema: {type: string}
+        - name: start
+          in: query
+          schema: {type: string}
+        - name: end
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LokiResponse'}
+        "400":
+          description: Unknown label
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LokiError'}
+        "403": {description: Missing logs:read or logs:query scope}
+  /loki/api/v1/series:
+    get:
+      summary: Loki-compatible series
+      description: Distinct label-set combinations matching the `match[]` stream selectors. Requires `logs:read`/`logs:query`.
+      tags: [Loki]
+      parameters:
+        - name: match[]
+          in: query
+          description: One or more Loki stream selectors.
+          schema: {type: array, items: {type: string}}
+        - name: start
+          in: query
+          schema: {type: string}
+        - name: end
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LokiResponse'}
+        "400":
+          description: Invalid selector
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LokiError'}
+        "403": {description: Missing logs:read or logs:query scope}
+  /loki/api/v1/status/buildinfo:
+    get:
+      summary: Loki-compatible build info
+      description: |
+        Static build info advertising a Loki-compatible version so Grafana's health
+        check and feature detection succeed. Behind the API-key middleware (any
+        scope).
+      tags: [Loki]
+      responses:
+        "200":
+          description: Build info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: {type: string}
+                  revision: {type: string}
+                  branch: {type: string}
+                  buildUser: {type: string}
+                  buildDate: {type: string}
+                  goVersion: {type: string}
+  # ── ChatOps (Slack — Slack-signature auth, not X-Qeet-Api-Key) ──────────────
+  /v1/chatops/slack/install:
+    get:
+      summary: Begin Slack app install (OAuth)
+      description: |
+        Redirects the admin's browser into Slack's OAuth v2 consent screen,
+        carrying the tenant id as the OAuth `state`. NOT authenticated with a Qeet
+        API key — Slack drives this flow — so `security: []`. 501 if
+        `SLACK_CLIENT_ID` is unset.
+      security: []
+      tags: [ChatOps]
+      parameters:
+        - name: tenant
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "302": {description: Redirect to Slack's OAuth consent screen}
+        "400":
+          description: tenant query parameter is required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "501":
+          description: Slack app not configured (SLACK_CLIENT_ID unset)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /v1/chatops/slack/callback:
+    get:
+      summary: Slack OAuth redirect callback
+      description: |
+        Exchanges the authorization `code` for a bot token and persists the
+        workspace→tenant installation. Called by Slack, not the Qeet API
+        (`security: []`). 501 if the Slack client secret is unset.
+      security: []
+      tags: [ChatOps]
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema: {type: string}
+        - name: state
+          in: query
+          required: true
+          description: The tenant id passed through the OAuth flow.
+          schema: {type: string}
+      responses:
+        "200":
+          description: Installation stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installed: {type: boolean}
+                  provider: {type: string}
+                  team: {type: string}
+        "400":
+          description: code and state are required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "501":
+          description: Slack app not configured
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "502": {description: Slack token exchange failed}
+  /v1/chatops/slack/commands:
+    post:
+      summary: Slack slash-command
+      description: |
+        Handles an incoming `/qeetlogs` slash-command. **Authentication is Slack's
+        request signature** (`X-Slack-Signature` + `X-Slack-Request-Timestamp`,
+        HMAC-SHA256 over `v0:{timestamp}:{body}`, 5-minute skew window), NOT the
+        Qeet API key — so this route sets `security: []`. The body is Slack's
+        `application/x-www-form-urlencoded` command payload; the workspace is
+        resolved to a tenant via the installation record. 501 if
+        `SLACK_SIGNING_SECRET` is unset.
+      security: []
+      tags: [ChatOps]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                team_id: {type: string}
+                text: {type: string}
+                command: {type: string}
+      responses:
+        "200":
+          description: Slack slash-command reply (message payload)
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        "401": {description: Invalid Slack signature}
+        "501":
+          description: Slack app not configured (SLACK_SIGNING_SECRET unset)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /v1/chatops/slack/interactivity:
+    post:
+      summary: Slack interactivity callback
+      description: |
+        Handles Block Kit button/menu callbacks. Verifies Slack's request signature
+        and acks — Slack-signature auth, not the Qeet API key (`security: []`). 501
+        if `SLACK_SIGNING_SECRET` is unset.
+      security: []
+      tags: [ChatOps]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                payload: {type: string}
+      responses:
+        "200": {description: Acknowledged}
+        "401": {description: Invalid Slack signature}
+        "501":
+          description: Slack app not configured (SLACK_SIGNING_SECRET unset)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
 components:
   securitySchemes:
     ApiKey:
@@ -801,6 +1546,214 @@ components:
         query:
           type: string
           description: LogQL++ or PromQL query string rendered by this panel.
+    CulpritResult:
+      type: object
+      properties:
+        service: {type: string}
+        window_seconds: {type: integer, format: int64}
+        culprits:
+          type: array
+          items: {$ref: '#/components/schemas/Culprit'}
+    Culprit:
+      type: object
+      properties:
+        id: {type: string}
+        kind: {type: string, enum: [deploy, flag, config, rollback]}
+        title: {type: string}
+        service: {type: string}
+        git_sha: {type: string}
+        deploy_id: {type: string}
+        pr_number: {type: string}
+        flag_key: {type: string}
+        age_seconds: {type: integer, format: int64}
+        timestamp: {type: string}
+        score:
+          type: number
+          format: double
+          description: Culprit likelihood 0–1 (higher = more likely cause).
+        reason: {type: string}
+        health: {$ref: '#/components/schemas/HealthDelta'}
+        rollback: {$ref: '#/components/schemas/Rollback'}
+    HealthDelta:
+      type: object
+      description: Error-rate comparison across the change boundary (Module 15.3).
+      properties:
+        before_total: {type: integer, format: int64}
+        before_errors: {type: integer, format: int64}
+        after_total: {type: integer, format: int64}
+        after_errors: {type: integer, format: int64}
+        before_rate: {type: number, format: double}
+        after_rate: {type: number, format: double}
+        delta: {type: number, format: double, description: after_rate - before_rate}
+        degraded: {type: boolean}
+    Rollback:
+      type: object
+      description: One-click rollback suggestion for a degraded deploy (Module 15.4).
+      properties:
+        suggested: {type: boolean}
+        target_git_sha: {type: string}
+        target_deploy_id: {type: string}
+        reason: {type: string}
+    BusinessContextMapping:
+      type: object
+      description: A per-service business-context mapping.
+      properties:
+        id: {type: string, format: uuid}
+        tenant_id: {type: string, format: uuid}
+        service: {type: string}
+        customer: {type: string}
+        plan_tier: {type: string}
+        monthly_revenue: {type: number, format: double}
+        sla_target: {type: number, format: double, description: '0 = not declared'}
+        owner: {type: string}
+        notes: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    Exposure:
+      type: object
+      description: Business-impact estimate derived from affected mappings (Module 16).
+      properties:
+        affected_services: {type: array, items: {type: string}}
+        affected_customers: {type: array, items: {type: string}}
+        affected_plan_tiers: {type: array, items: {type: string}}
+        revenue_at_risk: {$ref: '#/components/schemas/RevenueRange'}
+        worst_sla_target:
+          type: [number, "null"]
+          format: double
+          description: Strictest promised SLA, null if none declared.
+        mapping_count: {type: integer}
+    RevenueRange:
+      type: object
+      description: Qualified revenue-at-risk band (never a single point value).
+      properties:
+        low: {type: number, format: double}
+        high: {type: number, format: double}
+        currency: {type: string}
+        basis: {type: string}
+    RoutingSimRequest:
+      type: object
+      description: At least one of service, severity, labels must be present.
+      properties:
+        service: {type: string}
+        severity: {type: string}
+        labels:
+          type: object
+          additionalProperties: {type: string}
+    RoutingSimResponse:
+      type: object
+      properties:
+        service: {type: string}
+        severity: {type: string}
+        labels:
+          type: object
+          additionalProperties: {type: string}
+        rule_count: {type: integer}
+        matched_count: {type: integer}
+        results:
+          type: array
+          items: {$ref: '#/components/schemas/RoutingSimResult'}
+        channels_fired:
+          type: array
+          items: {$ref: '#/components/schemas/RoutingChannel'}
+    RoutingSimResult:
+      type: object
+      properties:
+        rule_id: {type: string}
+        rule_name: {type: string}
+        kind: {type: string}
+        matched: {type: boolean}
+        reasons: {type: array, items: {type: string}}
+        channels:
+          type: array
+          items: {$ref: '#/components/schemas/RoutingChannel'}
+    RoutingChannel:
+      type: object
+      properties:
+        type: {type: string, enum: [webhook, notify]}
+        target: {type: string}
+    TTFIQResponse:
+      type: object
+      properties:
+        tenant_id: {type: string, format: uuid}
+        onboarded_at: {type: [string, "null"], format: date-time}
+        first_query_at: {type: [string, "null"], format: date-time}
+        ttfiq_seconds: {type: [number, "null"], format: double}
+        ttfiq_human: {type: string}
+        cohort_count: {type: integer}
+        median_ttfiq_seconds: {type: [number, "null"], format: double}
+        status: {type: string}
+        assumptions: {type: array, items: {type: string}}
+    ForecastResponse:
+      type: object
+      properties:
+        service: {type: string}
+        metric: {type: string}
+        window_seconds: {type: integer, format: int64}
+        horizon: {type: integer}
+        points: {type: integer}
+        series:
+          type: array
+          items: {$ref: '#/components/schemas/ForecastPoint'}
+        slope: {type: number, format: double, description: Per-window rate of change.}
+        intercept: {type: number, format: double}
+        current: {type: number, format: double, description: Last observed bucket value.}
+        threshold: {type: [number, "null"], format: double}
+        projected_value: {type: number, format: double}
+        time_to_threshold: {type: [number, "null"], format: double, description: Windows until breach; null = no breach / no threshold.}
+        time_to_threshold_seconds: {type: [number, "null"], format: double}
+        will_breach: {type: boolean}
+        ewma: {type: number, format: double}
+        seasonal_baseline: {type: [number, "null"], format: double}
+        deviation: {type: [number, "null"], format: double}
+        deploy_reset_index: {type: integer, description: Series index of the most recent deploy; -1 = full history.}
+        note: {type: string}
+    ForecastPoint:
+      type: object
+      properties:
+        bucket: {type: string}
+        value: {type: number, format: double}
+    CopilotRequest:
+      type: object
+      required: [question]
+      properties:
+        question: {type: string}
+        context: {type: string, description: Optional extra context passed to the model.}
+    CopilotResponse:
+      type: object
+      properties:
+        loqlpp: {type: string, description: Generated LogQL++ — inspectable before execution.}
+        explanation: {type: string}
+    CopilotMessageResponse:
+      type: object
+      properties:
+        conversation_id: {type: string, format: uuid}
+        loqlpp: {type: string}
+        explanation: {type: string}
+    CopilotConversation:
+      type: object
+      properties:
+        conversation_id: {type: string, format: uuid}
+        turns:
+          type: array
+          items: {$ref: '#/components/schemas/CopilotTurn'}
+    CopilotTurn:
+      type: object
+      properties:
+        role: {type: string, enum: [user, assistant]}
+        content: {type: string}
+        loqlpp: {type: string}
+    LokiResponse:
+      type: object
+      description: Loki HTTP API success envelope; the shape of `data` varies by endpoint (streams object, or an array of labels/values/series).
+      properties:
+        status: {type: string, enum: [success]}
+        data:
+          description: Endpoint-specific payload.
+    LokiError:
+      type: object
+      properties:
+        status: {type: string, enum: [error]}
+        error: {type: string}
     Error:
       type: object
       properties:

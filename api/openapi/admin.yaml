@@ -50,6 +50,26 @@ tags:
   - name: Admin — Audit
   - name: Admin — DLQ
   - name: Admin — Quota
+  - name: Admin — Business Context
+    description: Per-service business-impact mappings (customer / plan / revenue / SLA).
+  - name: Admin — Postmortems
+    description: Incident postmortems, remediation commitments, and CERT-In export.
+  - name: Admin — AI Features
+    description: Per-tenant AI opt-in (governed copilot).
+  - name: Admin — ChatOps
+    description: One-way ChatOps delivery test (Slack / Teams).
+  - name: Admin — Billing
+    description: Plans, quota allowances, overage, and invoice preview.
+  - name: Admin — RCA Feedback
+    description: Operator labels on RCA candidates (learned-ranker training corpus).
+  - name: Admin — Webhooks
+    description: Outbound webhook endpoints.
+  - name: Admin — Incidents
+    description: Incident feedback → continuous calibration.
+  - name: Admin — War Room
+    description: Incident war-room sessions, roles, timeline, and handoff.
+  - name: Admin — Notify
+    description: Regional-language alert-delivery preference via Qeet Notify.
 paths:
   # ── Admin — API Keys ───────────────────────────────────────────────────────
   /v1/admin/api-keys:
@@ -514,6 +534,634 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/QuotaUsage'}
+  # ── Admin — Retention cost ─────────────────────────────────────────────────
+  /v1/admin/retention/cost:
+    get:
+      summary: Cost-transparent retention estimate + what-if
+      description: |
+        Returns a per-signal steady-state storage cost breakdown at the tenant's
+        current retention window, plus what-if previews for alternative windows
+        (Module 6.4). Requires `logs:admin` scope.
+      tags: [Admin — Retention]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RetentionCostResponse'}
+  # ── Admin — Business Context ───────────────────────────────────────────────
+  /v1/admin/business-context:
+    get:
+      summary: List business-context mappings
+      tags: [Admin — Business Context]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  mappings:
+                    type: array
+                    items: {$ref: '#/components/schemas/BusinessContextMapping'}
+    post:
+      summary: Create a business-context mapping
+      description: Maps a service to customer / plan-tier / monthly revenue / SLA target. Requires `logs:admin`.
+      tags: [Admin — Business Context]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BusinessContextInput'}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BusinessContextMapping'}
+        "400":
+          description: service is required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /v1/admin/business-context/{id}:
+    delete:
+      summary: Delete a business-context mapping
+      tags: [Admin — Business Context]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "204": {description: Deleted}
+        "404": {description: Mapping not found}
+  # ── Admin — Postmortems ────────────────────────────────────────────────────
+  /v1/admin/postmortems:
+    get:
+      summary: List postmortems
+      tags: [Admin — Postmortems]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Postmortem'}
+    post:
+      summary: Create a postmortem
+      tags: [Admin — Postmortems]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                incident_id: {type: [string, "null"], format: uuid}
+                title: {type: string}
+                summary: {type: [string, "null"]}
+                timeline: {type: [string, "null"]}
+                root_cause: {type: [string, "null"]}
+                impact: {type: [string, "null"]}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Postmortem'}
+        "400":
+          description: title required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /v1/admin/postmortems/{id}:
+    get:
+      summary: Get a postmortem
+      tags: [Admin — Postmortems]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Postmortem'}
+        "404": {description: Postmortem not found}
+    patch:
+      summary: Update a postmortem (partial; publishing stamps published_at)
+      tags: [Admin — Postmortems]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string}
+                summary: {type: string}
+                timeline: {type: string}
+                root_cause: {type: string}
+                impact: {type: string}
+                status: {type: string, enum: [draft, published]}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Postmortem'}
+        "400":
+          description: status must be draft or published
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "404": {description: Postmortem not found}
+  /v1/admin/postmortems/{id}/commitments:
+    get:
+      summary: List remediation commitments
+      tags: [Admin — Postmortems]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/PostmortemCommitment'}
+    post:
+      summary: Create a remediation commitment
+      tags: [Admin — Postmortems]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [description]
+              properties:
+                description: {type: string}
+                due_date: {type: [string, "null"], format: date}
+                alert_rule_id: {type: [string, "null"], format: uuid}
+                status: {type: string, enum: [open, done], default: open}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PostmortemCommitment'}
+        "400":
+          description: description required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "404": {description: Postmortem not found}
+  /v1/admin/postmortems/{id}/cert-in-export:
+    get:
+      summary: CERT-In 6-hour incident export
+      description: |
+        Reshapes the postmortem + its linked incident into the fixed CERT-In
+        6-hour incident report (Module 27.2). Requires `logs:admin`.
+      tags: [Admin — Postmortems]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CERTInReport'}
+        "404": {description: Postmortem not found}
+  # ── Admin — AI Features ────────────────────────────────────────────────────
+  /v1/admin/ai-features:
+    get:
+      summary: Get the tenant's AI opt-in state
+      description: Defaults (both false) when no row exists. Requires `logs:admin`.
+      tags: [Admin — AI Features]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AIFeatures'}
+    put:
+      summary: Update AI opt-in flags (partial)
+      description: |
+        Fields are optional so a partial PUT toggles just one flag. Enabling the
+        copilot never implies cross-tenant training consent. Requires `logs:admin`.
+      tags: [Admin — AI Features]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ai_features_enabled: {type: boolean}
+                cross_tenant_training_consent: {type: boolean}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AIFeatures'}
+  # ── Admin — ChatOps ────────────────────────────────────────────────────────
+  /v1/admin/chatops/test:
+    post:
+      summary: Send a test ChatOps notification
+      description: |
+        Formats a sample notification and POSTs it to the tenant's Slack/Teams
+        incoming-webhook URL, reporting the upstream status (one-way delivery test,
+        Module 19). Requires `logs:admin`.
+      tags: [Admin — ChatOps]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChatOpsTestRequest'}
+      responses:
+        "200":
+          description: Delivered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider: {type: string}
+                  delivered: {type: boolean}
+                  upstream_status: {type: integer}
+        "400":
+          description: webhook_url required, or provider must be slack|teams
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "502": {description: Delivery to the webhook failed}
+  # ── Admin — Billing ────────────────────────────────────────────────────────
+  /v1/admin/plan:
+    get:
+      summary: Get the tenant billing plan
+      description: Returns the `free` plan with zero allowances when none is set. Requires `logs:admin`.
+      tags: [Admin — Billing]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BillingPlan'}
+    put:
+      summary: Set the tenant billing plan + allowances
+      tags: [Admin — Billing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BillingPlan'}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BillingPlan'}
+        "400":
+          description: Invalid plan or negative allowances/rates
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /v1/admin/billing/preview:
+    get:
+      summary: Preview the current-period overage invoice
+      description: |
+        Loads the tenant's plan + current calendar-month usage and returns the
+        computed overage `InvoicePreview`. Preview only — actual charging via Qeet
+        Pay (Module 33.5) is not performed. Requires `logs:admin`.
+      tags: [Admin — Billing]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BillingPreviewResponse'}
+  # ── Admin — RCA Feedback ───────────────────────────────────────────────────
+  /v1/admin/rca/feedback:
+    post:
+      summary: Label an RCA candidate (training corpus)
+      description: |
+        Records an operator label on a retrieved RCA candidate — whether it was
+        actually the root cause — feeding the deferred learned-to-rank model
+        (Module 11.2). Requires `logs:admin`.
+      tags: [Admin — RCA Feedback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RCAFeedbackRequest'}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+                  was_root_cause: {type: boolean}
+        "400":
+          description: candidate_subject and was_root_cause are required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  # ── Admin — Webhooks ───────────────────────────────────────────────────────
+  /v1/admin/webhooks:
+    get:
+      summary: List outbound webhook endpoints
+      description: Secrets are redacted (only `has_secret` is returned). Requires `logs:admin`.
+      tags: [Admin — Webhooks]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  webhooks:
+                    type: array
+                    items: {$ref: '#/components/schemas/Webhook'}
+    post:
+      summary: Register an outbound webhook endpoint
+      tags: [Admin — Webhooks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: {type: string, format: uri}
+                events: {type: array, items: {type: string}}
+                secret: {type: string, description: HMAC signing secret (write-only).}
+                description: {type: string}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+                  url: {type: string}
+                  events: {type: array, items: {type: string}}
+        "400":
+          description: url is required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /v1/admin/webhooks/{id}:
+    delete:
+      summary: Delete a webhook endpoint
+      tags: [Admin — Webhooks]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "204": {description: Deleted}
+        "404": {description: Webhook not found}
+  # ── Admin — Incidents (feedback) ───────────────────────────────────────────
+  /v1/admin/incidents/{id}/feedback:
+    post:
+      summary: Submit incident feedback (continuous calibration)
+      description: |
+        Records an operator verdict on an incident — `actionable` (true positive)
+        or `noise` (false positive) — feeding the alerter's confidence calibration
+        (Module 13.3). Requires `logs:admin`.
+      tags: [Admin — Incidents]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verdict]
+              properties:
+                verdict: {type: string, enum: [actionable, noise]}
+                note: {type: string}
+      responses:
+        "201":
+          description: Recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+                  incident_id: {type: string, format: uuid}
+                  verdict: {type: string}
+        "400":
+          description: verdict must be 'actionable' or 'noise'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "404": {description: Incident not found}
+  # ── Admin — War Room ───────────────────────────────────────────────────────
+  /v1/admin/incidents/{id}/declare:
+    post:
+      summary: Declare an incident war-room session
+      description: Opens (or returns the existing open) war-room session for an incident (Module 18.1). Requires `logs:admin`.
+      tags: [Admin — War Room]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                commander: {type: string}
+                summary: {type: string}
+      responses:
+        "201":
+          description: Session opened
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+                  incident_id: {type: string, format: uuid}
+                  status: {type: string}
+                  opened_at: {type: string, format: date-time}
+        "404": {description: Incident not found}
+  /v1/admin/incidents/{id}/session:
+    get:
+      summary: Get the incident war-room session
+      description: Returns the open session + timeline entries + roles. Requires `logs:admin`.
+      tags: [Admin — War Room]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WarRoomSession'}
+        "404": {description: No war room for this incident}
+  /v1/admin/sessions/{id}/entries:
+    post:
+      summary: Append a war-room timeline entry
+      tags: [Admin — War Room]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind: {type: string, enum: [note, action, status_change, role], default: note}
+                author: {type: string}
+                body: {type: string}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, format: uuid}
+        "404": {description: Session not found}
+  /v1/admin/sessions/{id}/roles:
+    post:
+      summary: Assign/update an incident command role
+      tags: [Admin — War Room]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: {type: string}
+                assignee: {type: string}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  role: {type: string}
+                  assignee: {type: string}
+        "400":
+          description: role is required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        "404": {description: Session not found}
+  /v1/admin/sessions/{id}/handoff:
+    post:
+      summary: Assemble the post-incident handoff and resolve the session
+      tags: [Admin — War Room]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WarRoomHandoff'}
+        "404": {description: Session not found}
+  # ── Admin — Notify ─────────────────────────────────────────────────────────
+  /v1/admin/notify-locale:
+    get:
+      summary: Get the tenant's default alert locale
+      description: Platform default `en` when no row exists, plus the renderable-locale set. Requires `logs:admin`.
+      tags: [Admin — Notify]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotifyLocale'}
+    put:
+      summary: Set the tenant's default alert locale
+      description: Rejects a locale Qeet Notify cannot render (422). Requires `logs:admin`.
+      tags: [Admin — Notify]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [default_locale]
+              properties:
+                default_locale: {type: string}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotifyLocale'}
+        "422":
+          description: Unsupported locale (not in the Qeet Notify catalogue)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
 components:
   securitySchemes:
     ApiKey:
@@ -805,6 +1453,214 @@ components:
         created_at:
           type: string
           format: date-time
+    RetentionCostResponse:
+      type: object
+      properties:
+        estimate: {$ref: '#/components/schemas/CostEstimate'}
+        what_if:
+          type: array
+          items: {$ref: '#/components/schemas/WhatIf'}
+        observed_window_days: {type: integer}
+        basis: {type: string}
+    CostEstimate:
+      type: object
+      properties:
+        retention_days: {type: integer}
+        rate_per_gb_month: {type: number, format: double}
+        signals:
+          type: array
+          items: {$ref: '#/components/schemas/SignalCost'}
+        total_gb: {type: number, format: double}
+        total_monthly_usd: {type: number, format: double}
+    SignalCost:
+      type: object
+      properties:
+        signal: {type: string, enum: [logs, metrics, traces]}
+        daily_bytes: {type: integer, format: int64}
+        retained_gb: {type: number, format: double}
+        monthly_usd: {type: number, format: double}
+    WhatIf:
+      type: object
+      properties:
+        retention_days: {type: integer}
+        total_gb: {type: number, format: double}
+        total_monthly_usd: {type: number, format: double}
+    BusinessContextMapping:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        tenant_id: {type: string, format: uuid}
+        service: {type: string}
+        customer: {type: string}
+        plan_tier: {type: string}
+        monthly_revenue: {type: number, format: double}
+        sla_target: {type: number, format: double, description: '0 = not declared'}
+        owner: {type: string}
+        notes: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    BusinessContextInput:
+      type: object
+      required: [service]
+      properties:
+        service: {type: string}
+        customer: {type: string}
+        plan_tier: {type: string}
+        monthly_revenue: {type: number, format: double}
+        sla_target: {type: number, format: double, description: '<= 0 stored as NULL (undeclared)'}
+        owner: {type: string}
+        notes: {type: string}
+    Postmortem:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        tenant_id: {type: string, format: uuid}
+        incident_id: {type: [string, "null"], format: uuid}
+        title: {type: string}
+        summary: {type: [string, "null"]}
+        timeline: {type: [string, "null"]}
+        root_cause: {type: [string, "null"]}
+        impact: {type: [string, "null"]}
+        status: {type: string, enum: [draft, published]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        published_at: {type: [string, "null"], format: date-time}
+    PostmortemCommitment:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        tenant_id: {type: string, format: uuid}
+        postmortem_id: {type: string, format: uuid}
+        description: {type: string}
+        due_date: {type: [string, "null"], format: date}
+        alert_rule_id: {type: [string, "null"], format: uuid}
+        status: {type: string, enum: [open, done]}
+        created_at: {type: string, format: date-time}
+    CERTInReport:
+      type: object
+      description: CERT-In 6-hour incident report (fixed field set, Module 27.2).
+      properties:
+        incident_type: {type: string}
+        detected_at: {type: string, format: date-time}
+        reported_within_hours: {type: number, format: double}
+        affected_systems: {type: array, items: {type: string}}
+        severity: {type: string}
+        impact: {type: string}
+        root_cause: {type: string}
+        actions_taken: {type: string}
+        status: {type: string, enum: [resolved, ongoing, under_investigation]}
+    AIFeatures:
+      type: object
+      properties:
+        ai_features_enabled: {type: boolean}
+        cross_tenant_training_consent: {type: boolean}
+        updated_at: {type: string, format: date-time}
+    ChatOpsTestRequest:
+      type: object
+      required: [provider, webhook_url]
+      properties:
+        provider: {type: string, enum: [slack, teams]}
+        webhook_url: {type: string, format: uri}
+        title: {type: string}
+        service: {type: string}
+        severity: {type: string}
+        message: {type: string}
+        url: {type: string, description: Optional deep link.}
+        kind: {type: string, description: Optional event kind.}
+    BillingPlan:
+      type: object
+      properties:
+        plan: {type: string, enum: [free, pro, enterprise]}
+        included_events: {type: integer, format: int64}
+        included_gb: {type: number, format: double}
+        overage_per_million_events: {type: number, format: double}
+        overage_per_gb: {type: number, format: double}
+    InvoicePreview:
+      type: object
+      properties:
+        included_events: {type: integer, format: int64}
+        included_gb: {type: number, format: double}
+        overage_events: {type: integer, format: int64}
+        overage_gb: {type: number, format: double}
+        overage_events_cost: {type: number, format: double}
+        overage_gb_cost: {type: number, format: double}
+        total_cost: {type: number, format: double}
+    BillingPreviewResponse:
+      type: object
+      properties:
+        tenant_id: {type: string, format: uuid}
+        period_start: {type: string, format: date-time}
+        period_end: {type: string, format: date-time}
+        plan: {$ref: '#/components/schemas/BillingPlan'}
+        usage_events: {type: integer, format: int64}
+        usage_bytes: {type: integer, format: int64}
+        preview: {$ref: '#/components/schemas/InvoicePreview'}
+        note: {type: string}
+    RCAFeedbackRequest:
+      type: object
+      required: [candidate_subject, was_root_cause]
+      properties:
+        incident_id: {type: string, format: uuid, description: Optional — a label may be outside a tracked incident.}
+        candidate_subject: {type: string}
+        candidate_type: {type: string}
+        was_root_cause: {type: boolean}
+        note: {type: string}
+    Webhook:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        url: {type: string}
+        events: {type: array, items: {type: string}}
+        active: {type: boolean}
+        description: {type: string}
+        has_secret: {type: boolean, description: Whether a signing secret is set (the secret itself is never returned).}
+        created_at: {type: string, format: date-time}
+    WarRoomSession:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        incident_id: {type: string, format: uuid}
+        commander: {type: string}
+        summary: {type: string}
+        status: {type: string, enum: [open, resolved]}
+        opened_at: {type: string, format: date-time}
+        roles:
+          type: array
+          items: {$ref: '#/components/schemas/WarRoomRole'}
+        entries:
+          type: array
+          items: {$ref: '#/components/schemas/WarRoomEntry'}
+    WarRoomRole:
+      type: object
+      properties:
+        role: {type: string}
+        assignee: {type: string}
+    WarRoomEntry:
+      type: object
+      properties:
+        kind: {type: string, enum: [note, action, status_change, role]}
+        author: {type: string}
+        body: {type: string}
+        created_at: {type: string, format: date-time}
+    WarRoomHandoff:
+      type: object
+      properties:
+        incident_id: {type: string, format: uuid}
+        commander: {type: string}
+        duration_minutes: {type: number, format: double}
+        roles:
+          type: array
+          items: {$ref: '#/components/schemas/WarRoomRole'}
+        action_items: {type: array, items: {type: string}}
+        timeline_count: {type: integer}
+        summary: {type: string}
+        narrative: {type: string}
+    NotifyLocale:
+      type: object
+      properties:
+        default_locale: {type: string}
+        supported_locales: {type: array, items: {type: string}}
+        updated_at: {type: string, format: date-time}
     Error:
       type: object
       properties:

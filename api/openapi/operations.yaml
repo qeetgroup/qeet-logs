@@ -39,6 +39,8 @@ security:
   - BearerJWT: []
 tags:
   - name: Health
+  - name: Metrics
+    description: Prometheus scrape endpoint (internal).
 paths:
   # ── Health ─────────────────────────────────────────────────────────────────
   /healthz:
@@ -79,6 +81,23 @@ paths:
                 type: object
                 properties:
                   version: {type: string}
+  # ── Metrics ────────────────────────────────────────────────────────────────
+  /metrics:
+    get:
+      summary: Prometheus metrics (scrape)
+      description: |
+        Prometheus exposition of RED metrics plus the Go runtime/process
+        collectors, in `text/plain` exposition format. Intended for an INTERNAL
+        Prometheus scrape only — not for the public edge. The handler enforces no
+        authentication, so `security: []`.
+      security: []
+      tags: [Metrics]
+      responses:
+        "200":
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema: {type: string}
 components:
   securitySchemes:
     ApiKey:
