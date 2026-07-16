@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/qeetgroup/qeet-logs/domains/topology"
+	"github.com/qeetgroup/qeet-logs/domains/webhook"
 )
 
 // Fingerprint is the correlation key that collapses signals for one service
@@ -49,6 +50,7 @@ func (e *Engine) correlate(ctx context.Context, rule AlertRule, count int64, con
 		mergedConf   float64
 		signalCount  int
 		alreadyPaged bool
+		newlyOpened  bool // xmax = 0 ⇒ this row was INSERTed, not merged into an existing incident
 	)
 	err := e.pool.QueryRow(ctx, `
 		INSERT INTO incidents (tenant_id, fingerprint, title, service, severity, confidence,
@@ -64,9 +66,9 @@ func (e *Engine) correlate(ctx context.Context, rule AlertRule, count int64, con
 		        THEN incidents.correlated_rules
 		        ELSE incidents.correlated_rules || jsonb_build_array($8::text)
 		    END
-		RETURNING id, confidence, signal_count, paged`,
+		RETURNING id, confidence, signal_count, paged, (xmax = 0)`,
 		rule.TenantID, fp, title, svc, Severity(conf), conf, deployID, rule.ID,
-	).Scan(&id, &mergedConf, &signalCount, &alreadyPaged)
+	).Scan(&id, &mergedConf, &signalCount, &alreadyPaged, &newlyOpened)
 	if err != nil {
 		return fmt.Errorf("upsert incident: %w", err)
 	}
@@ -75,6 +77,17 @@ func (e *Engine) correlate(ctx context.Context, rule AlertRule, count int64, con
 	sev := Severity(mergedConf)
 	if _, err := e.pool.Exec(ctx, `UPDATE incidents SET severity = $1 WHERE id = $2::uuid`, sev, id); err != nil {
 		return fmt.Errorf("update severity: %w", err)
+	}
+
+	// Fire the outbound `incident.opened` webhook once, when the incident is first
+	// opened (Module 30.4). Best-effort + detached so slow receivers never block
+	// or fail the alerter cycle.
+	if newlyOpened {
+		e.dispatchWebhook(rule.TenantID, "incident.opened", map[string]any{
+			"event": "incident.opened", "incident_id": id, "tenant_id": rule.TenantID,
+			"service": svc, "severity": sev, "confidence": mergedConf, "title": title,
+			"deploy_id": deployID, "at": time.Now().UTC(),
+		})
 	}
 
 	// Page exactly once, and only at/above the confidence gate.
@@ -107,11 +120,30 @@ func (e *Engine) correlate(ctx context.Context, rule AlertRule, count int64, con
 
 // resolveOpenIncident closes the open incident for a rule's service.
 func (e *Engine) resolveOpenIncident(ctx context.Context, rule AlertRule) error {
-	fp := Fingerprint(rule.TenantID, serviceOf(rule))
-	_, err := e.pool.Exec(ctx,
+	svc := serviceOf(rule)
+	fp := Fingerprint(rule.TenantID, svc)
+	tag, err := e.pool.Exec(ctx,
 		`UPDATE incidents SET status = 'resolved', resolved_at = now()
 		 WHERE fingerprint = $1 AND status = 'open'`, fp)
+	if err == nil && tag.RowsAffected() > 0 {
+		e.dispatchWebhook(rule.TenantID, "incident.resolved", map[string]any{
+			"event": "incident.resolved", "tenant_id": rule.TenantID,
+			"service": svc, "at": time.Now().UTC(),
+		})
+	}
 	return err
+}
+
+// dispatchWebhook fires an outbound webhook in the background on a detached
+// context, so a slow or down receiver never blocks or cancels the alerter cycle
+// (PRD Module 30.4). Delivery is best-effort — see domains/webhook.
+func (e *Engine) dispatchWebhook(tenant, event string, payload map[string]any) {
+	pool := e.pool
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		webhook.Dispatch(ctx, pool, tenant, event, payload)
+	}()
 }
 
 // neighborIncidentFP looks up the topology graph and returns the fingerprint of

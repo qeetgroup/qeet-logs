@@ -90,6 +90,8 @@ func main() {
 		// Change-event ingestion + listing (Module 15.1)
 		rt.Post("/changes", handler.CreateChange(ch, pool))
 		rt.Get("/changes", handler.ListChanges(ch, pool))
+		// Provider webhook connectors → change_events (Module 30.4 / 31.3 / 31.4)
+		rt.Post("/changes/{provider}", handler.ChangeConnector(ch, pool))
 
 		// Service dependency & topology graph (Module 10)
 		rt.Get("/topology", handler.Topology(ch, pool))
@@ -144,6 +146,11 @@ func main() {
 		// Retention config (M6)
 		rt.Get("/retention", handler.GetRetention(pool))
 		rt.Put("/retention", handler.UpdateRetention(pool))
+
+		// Outbound webhook endpoints (Module 30.4)
+		rt.Post("/webhooks", handler.CreateWebhook(pool))
+		rt.Get("/webhooks", handler.ListWebhooks(pool))
+		rt.Delete("/webhooks/{id}", handler.DeleteWebhook(pool))
 
 		// In-flight remap program (Module 04.2)
 		rt.Get("/transform", handler.GetTransform(pool))

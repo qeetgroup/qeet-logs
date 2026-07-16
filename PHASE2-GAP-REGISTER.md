@@ -30,9 +30,11 @@
 - Hot/warm/cold ClickHouse `storage_policy` (S3/MinIO) + `qlogs-lifecycle` mover; per-tenant tier TTLs; pre-ingestion cost meter + budget guardrails. Extends `domains/retention`.
 - *Deps:* MinIO (present), metering (33.1 done).
 
-**P2-G3 · Webhooks (in/out) + change-event connectors** — Modules 30.4 / 31.3 / 31.4 — ⬜ — **M**
-- Outbound webhooks on alert/incident state; inbound change-event contract (GitHub Actions/GitLab CI, LaunchDarkly/Flagsmith, Terraform/Argo) feeding Module 15.
-- *Deps:* P2-G1.
+**P2-G3 · Webhooks (in/out) + change-event connectors** — Modules 30.4 / 31.3 / 31.4 — ✅ **DONE** — **M**
+- *Built (inbound, 31.3/31.4/30.4-in):* `domains/changesource/` — tolerant, pure parsers translating **GitHub** (deployment / workflow_run-success / push), **GitLab** (pipeline-success / deployment), and **LaunchDarkly** (flag change) webhook payloads into the normalized change-event contract; handler `POST /v1/changes/{provider}` (`handler/change_connectors.go`) inserts them into `change_events`, so a deploy or flag-flip auto-feeds Module 15 culprit scoring. Non-actionable payloads (e.g. failed runs) 200-ack without recording.
+- *Built (outbound, 30.4-out):* migration `0010_webhook_endpoints` (per-tenant endpoint registry: url/secret/events[]/active, explicit-tenant-filter like `incidents`); `domains/webhook/` dispatcher — loads active endpoints subscribed to an event, POSTs the JSON payload with `X-Qeet-Event`/`X-Qeet-Webhook-Id` + an **HMAC-SHA256** `X-Qeet-Signature`, best-effort with retry (no retry on 4xx). Admin CRUD `POST/GET/DELETE /v1/admin/webhooks` (`handler/webhooks.go`, secret write-only). Wired into the alerter incident engine: fires **`incident.opened`** once on first open (`xmax = 0` detection) and **`incident.resolved`** on close — dispatched on a detached background context so slow receivers never block the cycle.
+- *Verified:* `go build`/`go vet` clean; `go test ./domains/changesource` (6) + `go test ./domains/webhook` (3: HMAC sign, header+signature delivery, no-retry-on-4xx) + `./domains/alerting` all green. ClickHouse/Postgres-backed paths compile against the real schema; end-to-end delivery needs `make infra-up` (deferred, per Phase-1 convention).
+- *Deps:* P2-G1 (done).
 
 ## Wave P2-B — Business + incident substrate (mostly non-AI)
 
