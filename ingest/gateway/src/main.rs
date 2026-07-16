@@ -10,11 +10,18 @@
 //! Listens on INGEST_PORT (default 8101) and also on 4318 (the OTLP/HTTP
 //! convention). Both OTLP/HTTP JSON (`application/json`) and OTLP/HTTP protobuf
 //! (`application/x-protobuf`) are supported for logs, metrics, and traces.
+//!
+//! Product-readiness hardening (parity with the Go query plane): RED-style
+//! Prometheus metrics on `/metrics` ([`telemetry`]), a security-header baseline,
+//! a request-body-size cap answering 413, and the per-tenant fixed-window rate
+//! limiter — see [`harden`].
 
+mod harden;
 mod legacy;
 mod otlp;
 mod otlp_proto;
 mod prom;
+mod telemetry;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,8 +29,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::{
     body::Bytes,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
+    middleware::from_fn,
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -77,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
     let nats_url = env("NATS_URL", "nats://localhost:4223");
     let port: u16 = env("INGEST_PORT", "8101").parse().unwrap_or(8101);
     let rate_limit_per_min: u32 = env("INGEST_RATE_LIMIT_PER_MIN", "1000").parse().unwrap_or(1000);
+    let max_body_bytes = harden::max_body_bytes(std::env::var("INGEST_MAX_BODY_BYTES").ok().as_deref());
     let trace_sample_rate: f64 = env("TRACE_SAMPLE_RATE", "1.0").parse::<f64>().unwrap_or(1.0).clamp(0.0, 1.0);
     let trace_slow_ns: u64 = env("TRACE_SLOW_MS", "1000")
         .parse::<u64>()
@@ -114,9 +123,22 @@ async fn main() -> anyhow::Result<()> {
         auth_cache: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
     };
 
+    // Install the Prometheus recorder up front; the handle renders `/metrics`.
+    let metrics_handle = telemetry::install_recorder();
+
     let app = Router::new()
         .route("/healthz", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/readyz", get(readyz))
+        .route(
+            "/metrics",
+            get({
+                let h = metrics_handle.clone();
+                move || {
+                    let h = h.clone();
+                    async move { telemetry::render(&h) }
+                }
+            }),
+        )
         .route("/v1/ingest", post(ingest_one))
         .route("/v1/ingest/batch", post(ingest_batch))
         .route("/v1/ingest/gelf", post(ingest_gelf))
@@ -125,12 +147,20 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/metrics", post(ingest_metrics))
         .route("/v1/traces", post(ingest_traces))
         .route("/api/v1/write", post(prom_write))
+        // Metrics via `route_layer` (innermost, post-routing) so it can read the
+        // matched route PATTERN for a low-cardinality `route` label — the one
+        // placement where axum populates `MatchedPath`. Security headers and the
+        // body-size cap use `layer` (outer) so they apply to every request,
+        // including 404s and oversized payloads refused with 413 before routing.
+        .route_layer(from_fn(telemetry::track_metrics))
+        .layer(from_fn(harden::security_headers))
+        .layer(DefaultBodyLimit::max(max_body_bytes))
         .with_state(state);
 
     // Serve on the primary ingest port and the OTLP/HTTP convention port (4318).
     let primary = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
     let otlp_port = tokio::net::TcpListener::bind(("0.0.0.0", 4318)).await?;
-    tracing::info!(port, otlp_port = 4318, "qeet-logs ingest gateway starting");
+    tracing::info!(port, otlp_port = 4318, max_body_bytes, "qeet-logs ingest gateway starting");
 
     let app2 = app.clone();
     let s1 = async move { axum::serve(primary, app).await };
@@ -167,11 +197,18 @@ async fn ingest_one(State(s): State<AppState>, headers: HeaderMap, body: Bytes) 
     };
     let (rec, dropped) = build_record(input, &auth.tenant_id, auth.retention_days, &auth.masking, "http");
     if dropped {
+        telemetry::inc_records("dropped", 1);
         return (StatusCode::ACCEPTED, Json(json!({"accepted": 0, "dropped": 1}))).into_response();
     }
     match publish(&s, &rec).await {
-        Ok(()) => (StatusCode::ACCEPTED, Json(json!({"accepted": 1, "dropped": 0}))).into_response(),
-        Err(e) => err(StatusCode::BAD_GATEWAY, &format!("publish failed: {e}")),
+        Ok(()) => {
+            telemetry::inc_records("accepted", 1);
+            (StatusCode::ACCEPTED, Json(json!({"accepted": 1, "dropped": 0}))).into_response()
+        }
+        Err(e) => {
+            telemetry::inc_records("errors", 1);
+            err(StatusCode::BAD_GATEWAY, &format!("publish failed: {e}"))
+        }
     }
 }
 
@@ -207,6 +244,7 @@ async fn ingest_batch(State(s): State<AppState>, headers: HeaderMap, body: Bytes
             Err(_) => errors += 1,
         }
     }
+    telemetry::record_batch(accepted, dropped, errors);
     (StatusCode::ACCEPTED, Json(json!({"accepted": accepted, "dropped": dropped, "errors": errors}))).into_response()
 }
 
@@ -245,6 +283,7 @@ async fn ingest_otlp(State(s): State<AppState>, headers: HeaderMap, body: Bytes)
             Err(_) => errors += 1,
         }
     }
+    telemetry::record_batch(accepted, dropped, errors);
     (StatusCode::ACCEPTED, Json(json!({"accepted": accepted, "dropped": dropped, "errors": errors}))).into_response()
 }
 
@@ -289,6 +328,7 @@ async fn ingest_log_inputs(
             Err(_) => errors += 1,
         }
     }
+    telemetry::record_batch(accepted, dropped, errors);
     (StatusCode::ACCEPTED, Json(json!({"accepted": accepted, "dropped": dropped, "errors": errors}))).into_response()
 }
 
@@ -350,6 +390,7 @@ async fn ingest_metric_inputs(
             Err(_) => errors += 1,
         }
     }
+    telemetry::record_batch(accepted, 0, errors);
     (StatusCode::ACCEPTED, Json(json!({"accepted": accepted, "errors": errors}))).into_response()
 }
 
@@ -391,6 +432,8 @@ async fn ingest_traces(State(s): State<AppState>, headers: HeaderMap, body: Byte
             Err(_) => errors += 1,
         }
     }
+    telemetry::record_batch(accepted, 0, errors);
+    telemetry::inc_records("sampled_out", sampled_out);
     (StatusCode::ACCEPTED, Json(json!({"accepted": accepted, "sampled_out": sampled_out, "errors": errors}))).into_response()
 }
 
@@ -488,9 +531,15 @@ async fn authorize(s: &AppState, headers: &HeaderMap) -> Result<Auth, Response> 
     Ok(auth)
 }
 
+/// Per-tenant fixed-window rate limit, backed by the SHARED Redis already used
+/// by ingest (INCR + per-window EXPIRE), so the cap is enforced across every
+/// gateway replica — parity with the Go query plane's limiter. Fails OPEN: a
+/// Redis outage must not take ingestion down. The breach response carries the
+/// standard `Retry-After` + `X-RateLimit-*` headers. The window arithmetic is in
+/// [`harden`] (unit-tested there).
 async fn rate_limit(s: &AppState, tenant: &str) -> Result<(), Response> {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    let key = format!("ratelimit:ingest:{tenant}:{}", now / 60);
+    let key = harden::ratelimit_window_key(tenant, now);
     let mut redis = s.redis.clone();
     let count: u32 = match redis::cmd("INCR").arg(&key).query_async(&mut redis).await {
         Ok(c) => c,
@@ -499,11 +548,16 @@ async fn rate_limit(s: &AppState, tenant: &str) -> Result<(), Response> {
     if count == 1 {
         let _: Result<(), _> = redis::cmd("EXPIRE").arg(&key).arg(60).query_async(&mut redis).await;
     }
-    if count > s.rate_limit_per_min {
-        let retry_after = 60 - (now % 60);
+    if harden::ratelimit_exceeded(count, s.rate_limit_per_min) {
         let mut resp = err(StatusCode::TOO_MANY_REQUESTS, "ingestion rate limit exceeded");
-        resp.headers_mut()
-            .insert("Retry-After", retry_after.to_string().parse().unwrap());
+        let h = resp.headers_mut();
+        h.insert("Retry-After", harden::ratelimit_retry_after(now).to_string().parse().unwrap());
+        h.insert("X-RateLimit-Limit", s.rate_limit_per_min.to_string().parse().unwrap());
+        h.insert(
+            "X-RateLimit-Remaining",
+            harden::ratelimit_remaining(count, s.rate_limit_per_min).to_string().parse().unwrap(),
+        );
+        h.insert("X-RateLimit-Reset", harden::ratelimit_reset(now).to_string().parse().unwrap());
         return Err(resp);
     }
     Ok(())
