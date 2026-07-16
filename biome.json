@@ -55,7 +55,11 @@
       "!api/postman",
       "!api/openapi",
       "!sdk",
-      "!test/load"
+      "!test/load",
+      "!deploy/grafana",
+      "!**/target",
+      "!**/test-results",
+      "!**/playwright-report"
     ]
   }
 }
