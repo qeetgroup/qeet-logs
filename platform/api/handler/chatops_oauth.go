@@ -20,6 +20,7 @@ import (
 	"github.com/qeetgroup/qeet-logs/domains/chatops"
 	"github.com/qeetgroup/qeet-logs/domains/query"
 	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs/platform/security"
 )
 
 // Two-way ChatOps: Slack OAuth app install + slash-commands (PRD Module 19.1 /
@@ -135,12 +136,19 @@ func ChatOpsSlackCallback(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		// Encrypt the workspace bot token at rest (AES-GCM envelope when
+		// QEET_LOGS_SECRETS_KEY is set; dev passthrough otherwise).
+		encToken, err := security.EncryptSecret(tok.AccessToken)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot secure bot token: " + err.Error()})
+			return
+		}
 		_, err = pool.Exec(r.Context(),
 			`INSERT INTO chatops_installations (tenant_id, provider, team_id, team_name, bot_token, installed_by)
 			 VALUES ($1::uuid, 'slack', $2, $3, $4, $5)
 			 ON CONFLICT (tenant_id, provider, team_id)
 			 DO UPDATE SET team_name = EXCLUDED.team_name, bot_token = EXCLUDED.bot_token, installed_by = EXCLUDED.installed_by`,
-			tenant, tok.Team.ID, tok.Team.Name, tok.AccessToken, tok.AuthedUser.ID)
+			tenant, tok.Team.ID, tok.Team.Name, encToken, tok.AuthedUser.ID)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return

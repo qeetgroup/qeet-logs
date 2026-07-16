@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -75,14 +76,29 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+	// Security + observability baseline (product-readiness).
+	r.Use(apimw.SecureHeaders)                           // OWASP secure-header set
+	r.Use(apimw.MaxBodyBytes(apimw.DefaultMaxBodyBytes)) // 4 MiB request-body cap
+	r.Use(observability.Metrics)                         // Prometheus RED metrics
 
 	r.Get("/healthz", handler.Health)
 	r.Get("/readyz", handler.Ready(pool, rdb, ch, nc))
 	r.Get("/version", handler.Version(version))
+	// Prometheus scrape endpoint (RED metrics + Go runtime/process collectors).
+	r.Handle("/metrics", observability.MetricsHandler())
+
+	// Per-tenant rate-limit config (RATE_LIMIT_PER_MINUTE overrides the default).
+	rlCfg := apimw.DefaultRateLimit
+	if v := os.Getenv("RATE_LIMIT_PER_MINUTE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			rlCfg = apimw.RateLimitConfig{Requests: n, Window: time.Minute}
+		}
+	}
 
 	// Authenticated query API (API key → tenant + scopes).
 	r.Route("/v1", func(rt chi.Router) {
 		rt.Use(apimw.APIKeyAuth(pool))
+		rt.Use(apimw.RateLimit(rdb, rlCfg))
 		rt.Get("/query", handler.Query(ch, pool))
 		rt.Get("/query/tail", handler.Tail(rdb))
 		rt.Get("/auth-events", handler.AuthEvents(ch, pool))
@@ -141,6 +157,7 @@ func main() {
 	// Prometheus data source here; auth via X-Qeet-Api-Key → tenant + scopes.
 	r.Route("/api/v1", func(rt chi.Router) {
 		rt.Use(apimw.APIKeyAuth(pool))
+		rt.Use(apimw.RateLimit(rdb, rlCfg))
 		rt.Get("/query", handler.PromInstantQuery(ch, pool))
 		rt.Post("/query", handler.PromInstantQuery(ch, pool))
 		rt.Get("/query_range", handler.PromRangeQuery(ch, pool))
@@ -151,6 +168,7 @@ func main() {
 	// Grafana "Loki" data source here; auth via X-Qeet-Api-Key → tenant + scopes.
 	r.Route("/loki/api/v1", func(rt chi.Router) {
 		rt.Use(apimw.APIKeyAuth(pool))
+		rt.Use(apimw.RateLimit(rdb, rlCfg))
 		rt.Get("/query_range", handler.GrafanaLokiQueryRange(ch, pool))
 		rt.Get("/labels", handler.GrafanaLokiLabels(ch, pool))
 		rt.Get("/label/{name}/values", handler.GrafanaLokiLabelValues(ch, pool))
