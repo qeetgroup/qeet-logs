@@ -33,10 +33,13 @@
         <policies>
             <hot_cold>
                 <volumes>
-                    <!-- Fast local disk: recent, frequently-queried data. -->
-                    <hot>
+                    <!-- Fast local disk: recent, frequently-queried data. Must be
+                         named `default` so ALTER ... MODIFY SETTING storage_policy
+                         satisfies ClickHouse's rule that the new policy contain the
+                         old (`default`) policy's volumes by name. -->
+                    <default>
                         <disk>default</disk>
-                    </hot>
+                    </default>
                     <!-- Cheap object storage: aged data, kept until retention. -->
                     <cold>
                         <disk>s3_cold</disk>
