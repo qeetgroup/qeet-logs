@@ -64,7 +64,7 @@ platform/                 Shared infrastructure (no business logic)
 migrations/               Postgres golang-migrate pairs (NNNN_*.up/down.sql, immutable)
 clickhouse/migrations/    ClickHouse DDL (logs table, TTL, auth_events) — M1
 apps/console/             TanStack Start + @qeetrix/ui (:3020) — M7 (bun workspace; root package.json)
-sdk/go/                   Public Go SDK (separate module: github.com/qeetgroup/qeet-logs/sdk/go) — M9
+                          (SDKs are NOT in-repo — they live in qeet-sdks/qeet-logs-{go,node,react})
 api/openapi/              4 split bounded-context OpenAPI 3.1 specs (ingest/query/admin/operations) — source of truth, no monolith; see api/openapi/README.md
 api/postman/              Postman collection + environment + newman runner (run.sh)
 tools/openapi-split/      split/merge/verify tool for the OpenAPI specs (nested Go module; `cd` in to run)
@@ -106,8 +106,8 @@ deploy/                   docker-compose + Caddyfile + Helm chart + SOC2-CONTROL
 Building the PRD's **Phase 1 (MVP)** in milestones M0–M9. **ALL MILESTONES COMPLETE (M0–M9)**:
 - M0–M5: foundation, ingest, query, OIDC/RLS, API keys
 - M6: alerter binary (`cmd/alerter`) + threshold/absence engine (`domains/alerting/`) + migration 0005
-- M7: TanStack Start console (`apps/console/`) — 9 routes, pnpm/Node 24, dev server :3020
+- M7: TanStack Start console (`apps/console/`) — bun workspace, dev server :3020 (rebuilt + productionized; 21 routes)
 - M8: Dashboards CRUD (`handler/dashboards.go`) + Saved Searches (`handler/saved_searches.go`) + console routes
-- M9: DLQ table (migration 0006) + DLQ replay API + quota usage API + Go SDK (`sdk/go/`) + OpenAPI 3.1 specs (`api/openapi/*.yaml`, split by bounded context) + Postman collection (`api/postman/`) + Helm chart (`deploy/helm/`) + SOC 2 control mapping (`deploy/SOC2-CONTROLS.md`)
+- M9: DLQ table (migration 0006) + DLQ replay API + quota usage API + SDKs (in `qeet-sdks/qeet-logs-{go,node,react}`) + OpenAPI 3.1 specs (`api/openapi/*.yaml`, split by bounded context) + Postman collection (`api/postman/`) + Helm chart (`deploy/helm/`) + SOC 2 control mapping (`deploy/SOC2-CONTROLS.md`)
 
 **Phase 2 is substantially built** (see `PHASE2-GAP-REGISTER.md`): deployment intelligence, business context, postmortems + CERT-In, war-room, continuous calibration, Grafana/Loki + Prometheus surfaces, MCP server, export/routing-sim/TTFIQ, cost-transparent + cold-tier retention, statistical forecasting, RCA ranker + label store, governed LLM copilot (single-shot + multi-turn), two-way ChatOps (Slack), regional-language delivery via Qeet Notify, plans/quota + invoice preview. Genuinely-gated remainders (trained ONNX/L2R models, Qeet Pay charging, Teams inbound) are tracked in the register. Phase 3 (self-hosted, deeper ML tiers) out of scope.
