@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<!--
+  Cold-tier storage policy for Qeet Logs (PRD Module 6 / P2-G2).
+
+  Declares an S3-backed disk (`s3_cold`) pointing at MinIO in local dev, and a
+  `hot_cold` storage policy whose HOT volume is the built-in `default` disk and
+  whose COLD volume is `s3_cold`. clickhouse/migrations/0009_cold_tier.sql then
+  attaches this policy to the logs/metrics/traces tables and adds a hot→cold move
+  TTL ahead of the existing per-tenant delete TTL.
+
+  DEPLOY: mount this file to /etc/clickhouse-server/config.d/storage.xml (add a
+  volume mapping to the clickhouse service in docker-compose.yml), and ensure the
+  `qeet-logs-cold` bucket exists in MinIO (e.g. `mc mb local/qeet-logs-cold`).
+
+  The MinIO endpoint/credentials mirror the docker-compose `minio` service
+  (MINIO_ROOT_USER=qeet-logs / MINIO_ROOT_PASSWORD=qeet-logs123, S3 API on the
+  internal port 9000). In production, point <endpoint> at real object storage and
+  supply credentials via a secret, not inline.
+-->
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_cold>
+                <type>s3</type>
+                <endpoint>http://minio:9000/qeet-logs-cold/</endpoint>
+                <access_key_id>qeet-logs</access_key_id>
+                <secret_access_key>qeet-logs123</secret_access_key>
+                <region>us-east-1</region>
+                <!-- Local cache of remote parts, keeps hot reads off S3. -->
+                <metadata_path>/var/lib/clickhouse/disks/s3_cold/</metadata_path>
+            </s3_cold>
+        </disks>
+        <policies>
+            <hot_cold>
+                <volumes>
+                    <!-- Fast local disk: recent, frequently-queried data. -->
+                    <hot>
+                        <disk>default</disk>
+                    </hot>
+                    <!-- Cheap object storage: aged data, kept until retention. -->
+                    <cold>
+                        <disk>s3_cold</disk>
+                        <prefer_not_to_merge>true</prefer_not_to_merge>
+                    </cold>
+                </volumes>
+                <!-- Move parts to cold only when hot fills past 80%, in addition
+                     to the age-based TTL move in migration 0009. -->
+                <move_factor>0.2</move_factor>
+            </hot_cold>
+        </policies>
+    </storage_configuration>
+</clickhouse>

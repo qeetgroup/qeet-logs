@@ -121,6 +121,11 @@ func main() {
 		rt.Get("/forecast", handler.Forecast(ch))
 		// AI Copilot GA — governed LLM (opt-in + PII-mask + audit) (Module 12 / P2-G11)
 		rt.Post("/query/copilot", handler.Copilot(pool))
+		// AI Copilot conversational multi-turn — durable threads over the same
+		// governed pipeline (Module 12.2 / P2-G11)
+		rt.Post("/query/copilot/conversations", handler.StartCopilotConversation(pool))
+		rt.Post("/query/copilot/conversations/{id}/messages", handler.CopilotConversationMessage(pool))
+		rt.Get("/query/copilot/conversations/{id}", handler.GetCopilotConversation(pool))
 
 		// Correlation-aware panel overlays (Module 22.2)
 		rt.Get("/overlays", handler.Overlays(ch, pool))
@@ -153,6 +158,18 @@ func main() {
 		rt.Get("/status/buildinfo", handler.GrafanaLokiBuildInfo())
 	})
 
+	// Two-way ChatOps — Slack OAuth install + slash-commands (Module 19.1/19.3 /
+	// P2-G7). Slack calls these directly (they carry a workspace team_id, not a
+	// Qeet API key), so this group is NOT behind APIKeyAuth — each handler
+	// verifies Slack's request signature and resolves the tenant from the
+	// installation record, and returns 501 until the Slack app secrets are set.
+	r.Route("/v1/chatops", func(rt chi.Router) {
+		rt.Get("/slack/install", handler.ChatOpsSlackInstall())
+		rt.Get("/slack/callback", handler.ChatOpsSlackCallback(pool))
+		rt.Post("/slack/commands", handler.ChatOpsSlackCommands(ch, pool))
+		rt.Post("/slack/interactivity", handler.ChatOpsSlackInteractivity())
+	})
+
 	// Admin API — accepts an API key with logs:admin OR a Qeet ID Bearer JWT.
 	r.Route("/v1/admin", func(rt chi.Router) {
 		rt.Use(apimw.AnyAuth(pool, cfg.QeetIDIssuer))
@@ -179,6 +196,9 @@ func main() {
 		rt.Put("/ai-features", handler.UpdateAIFeatures(pool))
 		// One-way ChatOps delivery test (Module 19 outbound / P2-G7)
 		rt.Post("/chatops/test", handler.ChatOpsTest())
+		// Regional-language alert-delivery preference via Qeet Notify (Module 27.5 / P2-G8)
+		rt.Get("/notify-locale", handler.GetNotifyLocale(pool))
+		rt.Put("/notify-locale", handler.SetNotifyLocale(pool))
 		// Plans / quota / overage + invoice preview (Module 33.4 / P2-G17)
 		rt.Get("/plan", handler.BillingGetPlan(pool))
 		rt.Put("/plan", handler.BillingSetPlan(pool))
