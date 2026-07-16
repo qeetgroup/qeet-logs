@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+# Qeet Logs — Rust ingest pipeline. One image, two binaries:
+#   qeet-logs-gateway  HTTP/OTLP receiver -> PII gate -> NATS  (:8101 + :4318)
+#   qeet-logs-writer   NATS consumer -> ClickHouse batch insert + Redis tail
+# Default entrypoint is the gateway; run the writer by overriding the entrypoint:
+#   docker run --entrypoint qeet-logs-writer ... qeet-logs-ingest
+# (docker-compose.prod.yml sets `entrypoint: [qeet-logs-writer]` for its writer service)
+# Build context = repository root:
+#   docker build -f deploy/docker/Dockerfile.ingest -t qeet-logs-ingest .
+ARG RUST_VERSION=1.83
+
+# ── build ──────────────────────────────────────────────────────────────────
+# Full (buildpack-deps based) rust image so ring/prost have a C toolchain.
+FROM rust:${RUST_VERSION}-bookworm AS build
+WORKDIR /src/ingest
+COPY ingest/ ./
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/ingest/target \
+    cargo build --release --locked \
+      --bin qeet-logs-gateway --bin qeet-logs-writer && \
+    mkdir -p /out && \
+    cp target/release/qeet-logs-gateway target/release/qeet-logs-writer /out/
+
+# ── runtime ────────────────────────────────────────────────────────────────
+FROM debian:bookworm-slim AS runtime
+LABEL org.opencontainers.image.source="https://github.com/qeetgroup/qeet-logs" \
+      org.opencontainers.image.title="qeet-logs-ingest" \
+      org.opencontainers.image.description="Qeet Logs ingest gateway + writer (Rust)"
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 65532 --user-group --no-create-home qeet
+COPY --from=build /out/qeet-logs-gateway /usr/local/bin/qeet-logs-gateway
+COPY --from=build /out/qeet-logs-writer  /usr/local/bin/qeet-logs-writer
+EXPOSE 8101 4318
+USER qeet:qeet
+ENTRYPOINT ["qeet-logs-gateway"]
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${INGEST_PORT:-8101}/healthz" || exit 1

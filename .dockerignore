@@ -1,0 +1,49 @@
+# Keep the build context small & reproducible. Go/Rust image builds copy the
+# repo root; nothing below is needed to compile a binary.
+
+# ── VCS / CI ────────────────────────────────────────────────────────────────
+.git
+.gitignore
+.github/
+.claude/
+
+# ── Docs / gap registers ─────────────────────────────────────────────────────
+*.md
+deploy/SOC2-CONTROLS.md
+
+# ── Go build output ───────────────────────────────────────────────────────────
+bin/
+*.test
+*.out
+
+# ── Rust build output ─────────────────────────────────────────────────────────
+target/
+ingest/target/
+
+# ── Node / bun workspace (apps/console is not containerised here) ──────────────
+node_modules/
+apps/console/node_modules/
+apps/console/.output/
+apps/console/dist/
+apps/console/.nitro/
+apps/console/.tanstack/
+apps/console/.turbo/
+.turbo/
+*.tsbuildinfo
+
+# ── Deploy artifacts not needed inside images ──────────────────────────────────
+deploy/helm/
+deploy/otel-collector/
+deploy/docker-compose.prod.yml
+
+# ── Env & secrets — never ship these into an image ─────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+
+# ── Editor / OS cruft ───────────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/
+*.swp

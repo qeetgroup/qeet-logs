@@ -1,0 +1,62 @@
+# syntax=docker/dockerfile:1
+# Qeet Logs — Query API (Go). HTTP :8100, /healthz /readyz /version.
+# Build context = repository root:
+#   docker build -f deploy/docker/Dockerfile.query -t qeet-logs-query .
+ARG GO_VERSION=1.25.2
+
+# ── build ──────────────────────────────────────────────────────────────────
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
+WORKDIR /src
+ENV CGO_ENABLED=0
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY . .
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+    -o /out/query ./cmd/query
+
+# Tiny HTTP health probe — distroless has no shell/curl for HEALTHCHECK.
+RUN mkdir /hc
+COPY <<'EOF' /hc/main.go
+package main
+
+import (
+	"net/http"
+	"os"
+	"time"
+)
+
+func main() {
+	port := os.Getenv("HTTP_PORT")
+	if port == "" {
+		port = "8100"
+	}
+	c := &http.Client{Timeout: 3 * time.Second}
+	r, err := c.Get("http://127.0.0.1:" + port + "/healthz")
+	if err != nil || r.StatusCode != http.StatusOK {
+		os.Exit(1)
+	}
+}
+EOF
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    cd /hc && go mod init healthcheck >/dev/null 2>&1 && \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags "-s -w" -o /out/healthcheck .
+
+# ── runtime ────────────────────────────────────────────────────────────────
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+LABEL org.opencontainers.image.source="https://github.com/qeetgroup/qeet-logs" \
+      org.opencontainers.image.title="qeet-logs-query" \
+      org.opencontainers.image.description="Qeet Logs query API"
+COPY --from=build /out/query /usr/local/bin/query
+COPY --from=build /out/healthcheck /usr/local/bin/healthcheck
+EXPOSE 8100
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/query"]
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["/usr/local/bin/healthcheck"]

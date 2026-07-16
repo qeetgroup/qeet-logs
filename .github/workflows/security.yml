@@ -1,0 +1,114 @@
+name: Security
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Go known-vulnerability scan ────────────────────────────────────────────
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  # ── Static analysis (SARIF → GitHub code scanning) ─────────────────────────
+  gosec:
+    name: gosec
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run gosec
+        uses: securego/gosec@master
+        with:
+          # -no-fail: report findings without failing the job; results land in
+          # the Security tab via the SARIF upload below.
+          args: "-no-fail -fmt sarif -out gosec.sarif ./..."
+      - name: Upload gosec SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+  # ── CodeQL (Go) ────────────────────────────────────────────────────────────
+  codeql:
+    name: CodeQL (go)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go"
+
+  # ── Console dependency audit ───────────────────────────────────────────────
+  bun-audit:
+    name: bun audit (console)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - name: bun audit
+        run: bun audit
+        continue-on-error: true # advisory — do not block on transitive CVEs
+
+  # ── Trivy filesystem scan (optional) ───────────────────────────────────────
+  # Scans repo dependencies + IaC/Dockerfile misconfig. Image scanning happens
+  # against the published images in release.yml; this is a cheap PR-time gate.
+  trivy:
+    name: Trivy (filesystem)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+        continue-on-error: true
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-fs
+        continue-on-error: true
