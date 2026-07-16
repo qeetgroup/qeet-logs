@@ -117,6 +117,11 @@ func main() {
 		rt.Post("/alerts/simulate", handler.SimulateAlertRouting(pool))
 		rt.Get("/analytics/ttfiq", handler.TTFIQ(pool))
 
+		// Predictive Observability — statistical capacity/exhaustion + trend (Module 14.1/14.2 / P2-G12)
+		rt.Get("/forecast", handler.Forecast(ch))
+		// AI Copilot GA — governed LLM (opt-in + PII-mask + audit) (Module 12 / P2-G11)
+		rt.Post("/query/copilot", handler.Copilot(pool))
+
 		// Correlation-aware panel overlays (Module 22.2)
 		rt.Get("/overlays", handler.Overlays(ch, pool))
 
@@ -168,6 +173,18 @@ func main() {
 		rt.Put("/retention", handler.UpdateRetention(pool))
 		// Cost-transparent retention estimate + what-if (Module 6.4 / P2-G2)
 		rt.Get("/retention/cost", handler.RetentionCost(ch, pool))
+
+		// AI feature opt-in (Module 12 / P2-G11)
+		rt.Get("/ai-features", handler.GetAIFeatures(pool))
+		rt.Put("/ai-features", handler.UpdateAIFeatures(pool))
+		// One-way ChatOps delivery test (Module 19 outbound / P2-G7)
+		rt.Post("/chatops/test", handler.ChatOpsTest())
+		// Plans / quota / overage + invoice preview (Module 33.4 / P2-G17)
+		rt.Get("/plan", handler.BillingGetPlan(pool))
+		rt.Put("/plan", handler.BillingSetPlan(pool))
+		rt.Get("/billing/preview", handler.BillingPreview(ch, pool))
+		// RCA root-cause labels → training corpus for the deferred learned ranker (Module 11.2 / P2-G10)
+		rt.Post("/rca/feedback", handler.RCAFeedback(pool))
 
 		// Outbound webhook endpoints (Module 30.4)
 		rt.Post("/webhooks", handler.CreateWebhook(pool))
