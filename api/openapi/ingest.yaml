@@ -44,7 +44,28 @@ tags:
     description: Metric ingestion (OTLP, Prometheus remote_write).
   - name: Ingest — Traces
     description: Distributed trace / span ingestion (OTLP).
+  - name: Operations
+    description: Gateway health + metrics.
 paths:
+  # ── Operations ───────────────────────────────────────────────────────────────
+  /metrics:
+    get:
+      summary: Prometheus metrics (scrape)
+      description: |
+        Prometheus exposition of the ingest gateway's RED metrics
+        (`ingest_requests_total`, `ingest_request_duration_seconds`,
+        `ingest_requests_in_flight`) plus record/bytes counters
+        (`ingest_records_total`, `ingest_bytes_received_total`), in `text/plain`
+        exposition format. Intended for an INTERNAL Prometheus scrape only — not
+        for the public edge. No authentication, so `security: []`.
+      security: []
+      tags: [Operations]
+      responses:
+        "200":
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema: {type: string}
   # ── Ingest — logs ──────────────────────────────────────────────────────────
   /v1/ingest:
     post:
