@@ -1,0 +1,13 @@
+{
+  "app": {
+    "name": "Qeet Logs",
+    "tagline": "Privacy-first, identity-aware log management"
+  },
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "create": "Create",
+    "delete": "Delete",
+    "run": "Run"
+  }
+}

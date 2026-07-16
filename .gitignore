@@ -6,11 +6,18 @@
 # Rust
 /ingest/target/
 
-# Node / Next.js
+# Node / bun workspace (apps/console)
 node_modules/
 .next/
 out/
 .turbo/
+# TanStack Start / Vite / Nitro build output
+dist/
+.output/
+.nitro/
+.tanstack/
+.netlify/
+*.tsbuildinfo
 
 # Env & secrets — never commit
 .env
