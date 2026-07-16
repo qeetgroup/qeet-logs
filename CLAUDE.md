@@ -8,7 +8,7 @@ TAD: [../qeet-files/qeet-logs/Technical_Architecture_Document.md](../qeet-files/
 ## Quick commands
 
 ```bash
-nvm use            # Node 24 (.nvmrc) — for apps/console
+bun install        # apps/console workspace deps (bun — see root package.json)
 cp .env.example .env
 
 make infra-up      # ClickHouse, Postgres, NATS, Redis, MinIO via Docker
@@ -18,7 +18,7 @@ make ch-migrate    # Apply ClickHouse DDL (clickhouse/migrations/*.sql) — M1+
 make dev           # Run query API (cmd/query) on :8100
 make dev-ingest    # Run Rust ingest gateway (needs Rust toolchain) — M2
 make dev-alerter   # Run alerter engine (cmd/alerter) — M6
-make dev-console   # TanStack Start console on :3020 — M7 (cd apps/console && pnpm dev)
+make dev-console   # TanStack Start console on :3020 — M7 (bun run --filter '@qeet-logs/console' dev)
 
 make build         # Build all Go binaries to bin/
 make test          # Go unit tests (go vet + go test -race)
@@ -41,6 +41,8 @@ cmd/
   alerter/    → threshold + absence rule engine (M6)
   migrate/    → golang-migrate runner (Postgres)
   seed/       → demo tenant + API key + sample logs (M0/M1)
+  mcp/        → stdio MCP server (query/incidents/rca/topology/deploy tools) — Phase 2
+  lifecycle/  → cold-tier storage mover (hot→cold S3/MinIO partition moves) — Phase 2
 
 ingest/                   Rust Cargo workspace (M2)
   gateway/                HTTP/OTLP receiver → PII gate → NATS
@@ -61,7 +63,7 @@ platform/                 Shared infrastructure (no business logic)
 
 migrations/               Postgres golang-migrate pairs (NNNN_*.up/down.sql, immutable)
 clickhouse/migrations/    ClickHouse DDL (logs table, TTL, auth_events) — M1
-apps/console/             TanStack Start + @qeetrix/ui (:3020) — M7 (pnpm, Node 24, .nvmrc)
+apps/console/             TanStack Start + @qeetrix/ui (:3020) — M7 (bun workspace; root package.json)
 sdk/go/                   Public Go SDK (separate module: github.com/qeetgroup/qeet-logs/sdk/go) — M9
 api/openapi/              4 split bounded-context OpenAPI 3.1 specs (ingest/query/admin/operations) — source of truth, no monolith; see api/openapi/README.md
 api/postman/              Postman collection + environment + newman runner (run.sh)
@@ -108,4 +110,4 @@ Building the PRD's **Phase 1 (MVP)** in milestones M0–M9. **ALL MILESTONES COM
 - M8: Dashboards CRUD (`handler/dashboards.go`) + Saved Searches (`handler/saved_searches.go`) + console routes
 - M9: DLQ table (migration 0006) + DLQ replay API + quota usage API + Go SDK (`sdk/go/`) + OpenAPI 3.1 specs (`api/openapi/*.yaml`, split by bounded context) + Postman collection (`api/postman/`) + Helm chart (`deploy/helm/`) + SOC 2 control mapping (`deploy/SOC2-CONTROLS.md`)
 
-Phase 2 (PII ML, GDPR erasure) and Phase 3 (anomaly detection, NLQ, self-hosted) out of scope.
+**Phase 2 is substantially built** (see `PHASE2-GAP-REGISTER.md`): deployment intelligence, business context, postmortems + CERT-In, war-room, continuous calibration, Grafana/Loki + Prometheus surfaces, MCP server, export/routing-sim/TTFIQ, cost-transparent + cold-tier retention, statistical forecasting, RCA ranker + label store, governed LLM copilot (single-shot + multi-turn), two-way ChatOps (Slack), regional-language delivery via Qeet Notify, plans/quota + invoice preview. Genuinely-gated remainders (trained ONNX/L2R models, Qeet Pay charging, Teams inbound) are tracked in the register. Phase 3 (self-hosted, deeper ML tiers) out of scope.

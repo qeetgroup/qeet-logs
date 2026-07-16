@@ -100,19 +100,26 @@ Shipped on `develop` (Go build/vet/test green across all domains; ClickHouse/Pos
 | **P2-G13** | 22.4 | ✅ | `domains/grafana` Loki-compat read source; `/loki/api/v1/*` |
 | **P2-G15** | 29.3 | ✅ | `cmd/mcp` stdio MCP server (query/incidents/rca/topology/deploy tools) |
 | **P2-G16** | 8.5/17.4/7.5 | ✅ | `/v1/export`, `POST /v1/alerts/simulate` (`domains/routingsim`), `GET /v1/analytics/ttfiq` (`domains/ttfiq`) |
-| **P2-G2** | 6.4/28 | ✅ (non-gated part) | `domains/retention` `EstimateCost`/`WhatIfRetention`; `GET /v1/admin/retention/cost` (transparent $/GB-month × observed ingest × window). Cold-tier S3 tiering still 🔒 |
+| **P2-G2** | 6.4/28 | ✅ | `domains/retention` cost estimate/what-if + `GET /v1/admin/retention/cost`; **plus cold-tier lifecycle** — ClickHouse `hot_cold` S3 policy (`clickhouse/config/storage.xml` MinIO disk) + move-TTL (CH mig 0009) + pure `domains/lifecycle` planner + `cmd/lifecycle` mover + `tenant_tiers` (mig 0020). Needs a CH cluster + MinIO to exercise |
 | **P2-G5** | 18 | ✅ (non-Slack part) | `domains/warroom` (mig 0014 sessions/entries/roles) + declare/session/entries/roles/handoff admin API. Two-way Slack/Teams sync still 🔒 (P2-G7) |
 
-| **P2-G7** | 19 | ✅ (one-way part) | `domains/chatops` Slack/Teams incoming-webhook formatters + `POST /v1/admin/chatops/test`. Two-way slash-commands + OAuth app install still 🔒 |
+| **P2-G7** | 19 | ✅ | One-way: `domains/chatops` formatters + `POST /v1/admin/chatops/test`. **Two-way**: Slack OAuth v2 install/callback + signed slash-commands (real HMAC-v0 verify + replay window) executing query/incidents/rca via the query stack + interactivity ack (`domains/chatops/commands`, `chatops_installations` mig 0018, `/v1/chatops/slack/*`). Needs a registered Slack app (501 until set); Teams inbound + signed OAuth state still to harden |
+| **P2-G8** | 27.5 | ✅ | `domains/notify` Qeet Notify client (locale-tagged trigger + `ResolveLocale` fallback + 13-locale India-first catalogue) + admin `/v1/admin/notify-locale` + `notify_prefs` (mig 0021). Needs a running Qeet Notify. GST invoicing via **Qeet Pay** still 🔒 |
 | **P2-G10** | 11.2 | ✅ (substrate) | `domains/rca` feature-weighted ranker (`Rank`/`Weights`/gate) + `rca_feedback` label store (mig 0015) + `POST /v1/admin/rca/feedback`. Trained learned-to-rank model still 🔒 (needs corpus) |
-| **P2-G11** | 12 | ✅ (substrate) | `domains/aigateway` opt-in + PII-mask + audit (mig 0016) wrapping the existing Anthropic call; `POST /v1/query/copilot`, `/v1/admin/ai-features`. Multi-turn + Tier-2 routing still 🔒 |
+| **P2-G11** | 12 | ✅ | `domains/aigateway` opt-in + PII-mask + audit (mig 0016) wrapping the existing Anthropic call; `POST /v1/query/copilot`, `/v1/admin/ai-features`. **Plus multi-turn**: durable `copilot_conversations`/`copilot_messages` (mig 0019) replayed via pure `aigateway.BuildThreadPrompt` through the SAME Govern pipeline; `/v1/query/copilot/conversations{,/{id}/messages}`. Tier-2 (larger-model) routing still a config choice |
 | **P2-G12** | 14.1/14.2 | ✅ (statistical tier) | `domains/forecast` OLS/EWMA/seasonal capacity-exhaustion + deploy-aware trend; `GET /v1/forecast`. ONNX model tiers (14.3+) still 🔒/Phase-3 |
 | **P2-G17** | 33.4 | ✅ (compute part) | `domains/billing` `ComputeInvoicePreview` + plans (mig 0017); `/v1/admin/plan`, `/v1/admin/billing/preview`. Actual charging via Qeet Pay (33.5) still 🔒 |
 
-Migrations reconciled sequentially: 0010 webhooks · 0011 business_context · 0012 postmortems · 0013 incident_feedback · 0014 incident_sessions · 0015 rca_feedback · 0016 ai_gateway · 0017 tenant_plans.
+Migrations reconciled sequentially — Postgres: 0010 webhooks · 0011 business_context · 0012 postmortems · 0013 incident_feedback · 0014 incident_sessions · 0015 rca_feedback · 0016 ai_gateway · 0017 tenant_plans · 0018 chatops_installations · 0019 copilot_conversations · 0020 tenant_tiers · 0021 notify_prefs. ClickHouse: 0009 cold_tier.
 
-**All Phase-2 backend gaps now have shipped code — either complete (G1/G3/G4/G6/G9/G13/G15/G16) or the honest non-gated substrate (G2/G5/G7/G10/G11/G12/G17).** 20 Go packages build/vet/test green.
+**Every Phase-2 backend gap now has shipped, verified code** — complete (G1/G3/G4/G6/G7/G8/G9/G11/G13/G15/G16) or the honest non-gated slice (G2 cold-tier shipped; G5/G10/G12/G17 substrates). 21 Go packages build/vet/test green.
 
-Still genuinely gated (need infra/products that do not exist — NOT faked): trained learned-to-rank model + ONNX Tier-1 runtime (G10/G12 GA), conversational multi-turn + Tier-2 model routing (G11 GA), Slack/Teams OAuth apps + two-way sync (G7), cold-tier S3 lifecycle (G2), actual invoicing via **Qeet Pay** (G17/G8 GST), regional-language via **Qeet Notify** (G8) — each documented in-code where its substrate lives.
+Only these remainders are genuinely gated — they need infrastructure/products that do not yet exist, and are reported, **NOT faked**:
+- **G10/G12 GA** — a *trained* learned-to-rank model + ONNX Tier-1 anomaly runtime (the feature-weighted ranker + label store + statistical forecaster ship now; the trained model needs a labeled corpus that does not exist yet).
+- **G11 Tier-2 routing** — larger-model routing is a config choice, not new code.
+- **G7 hardening** — Teams inbound app + signed single-use OAuth `state` (Slack two-way ships now).
+- **Qeet Pay** — actual invoicing/charging (G17) + GST (G8/27.4); the compute/preview ships now.
+
+Each gated item is documented in-code where its substrate lives; each shipped-but-infra-dependent slice (cold-tier, Slack, Qeet Notify, copilot) returns a clear 501/error when its infra/secret is absent rather than fabricating success.
 
 **Frontend** (console): ✅ rebuilt from scratch on **bun** (root workspace + `apps/console`), mirroring the qeet-id console — @qeetrix/ui + TanStack Start + Biome, app shell (sidebar/header/nav/theme/i18n/tanstack-query) + 21 route pages covering Phase-1 + Phase-2 (overview, search, live-tail, incidents w/ RCA+deploy-culprits+business-context+feedback, topology, timeline, changes, alerts, api-keys, settings, business-context, postmortems, webhooks, dashboards, export, analytics, saved-searches, audit, sign-in). `bun install` + typecheck + SSR build + biome all green on develop.
