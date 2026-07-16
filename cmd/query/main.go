@@ -166,6 +166,8 @@ func main() {
 		// Retention config (M6)
 		rt.Get("/retention", handler.GetRetention(pool))
 		rt.Put("/retention", handler.UpdateRetention(pool))
+		// Cost-transparent retention estimate + what-if (Module 6.4 / P2-G2)
+		rt.Get("/retention/cost", handler.RetentionCost(ch, pool))
 
 		// Outbound webhook endpoints (Module 30.4)
 		rt.Post("/webhooks", handler.CreateWebhook(pool))
@@ -174,6 +176,13 @@ func main() {
 
 		// Incident feedback → continuous calibration (Module 13.3)
 		rt.Post("/incidents/{id}/feedback", handler.SubmitIncidentFeedback(pool))
+
+		// Incident war-room core — declare / timeline / roles / handoff (Module 18 / P2-G5)
+		rt.Post("/incidents/{id}/declare", handler.DeclareIncidentWarRoom(pool))
+		rt.Get("/incidents/{id}/session", handler.GetIncidentWarRoom(pool))
+		rt.Post("/sessions/{id}/entries", handler.AddWarRoomEntry(pool))
+		rt.Post("/sessions/{id}/roles", handler.AssignWarRoomRole(pool))
+		rt.Post("/sessions/{id}/handoff", handler.HandoffWarRoom(pool))
 
 		// Business context mappings CRUD (Module 16 / P2-G4)
 		rt.Post("/business-context", handler.BusContextCreate(pool))
