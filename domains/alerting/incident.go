@@ -45,6 +45,11 @@ func (e *Engine) correlate(ctx context.Context, rule AlertRule, count int64, con
 		title = rule.Name
 	}
 
+	// Continuous calibration (Module 13.3): scale the raw confidence by what past
+	// operator verdicts say about this service's signal quality before it reaches
+	// the page gate. Neutral (1.0) until there's enough feedback.
+	conf = clamp01(conf * e.CalibrationFactor(ctx, rule.TenantID, svc))
+
 	var (
 		id           string
 		mergedConf   float64

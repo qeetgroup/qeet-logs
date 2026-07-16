@@ -152,6 +152,9 @@ func main() {
 		rt.Get("/webhooks", handler.ListWebhooks(pool))
 		rt.Delete("/webhooks/{id}", handler.DeleteWebhook(pool))
 
+		// Incident feedback → continuous calibration (Module 13.3)
+		rt.Post("/incidents/{id}/feedback", handler.SubmitIncidentFeedback(pool))
+
 		// In-flight remap program (Module 04.2)
 		rt.Get("/transform", handler.GetTransform(pool))
 		rt.Put("/transform", handler.UpsertTransform(pool))
