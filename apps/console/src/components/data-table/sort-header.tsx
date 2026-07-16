@@ -16,8 +16,10 @@ type SortHeaderProps = {
 // shows the active direction. Pairs with useListView's sort state.
 export function SortHeader({ columnKey, sort, onToggle, children, className }: SortHeaderProps) {
   const active = sort?.key === columnKey;
+  // Expose the current sort direction to assistive tech on the column header.
+  const ariaSort = active ? (sort?.dir === "asc" ? "ascending" : "descending") : "none";
   return (
-    <TableHead className={className}>
+    <TableHead className={className} aria-sort={ariaSort}>
       <button
         type="button"
         onClick={() => onToggle(columnKey)}

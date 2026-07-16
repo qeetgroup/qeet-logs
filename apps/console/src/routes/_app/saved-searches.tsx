@@ -14,6 +14,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookmarkIcon, PlayIcon, Trash2Icon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
@@ -31,6 +32,7 @@ type SavedSearch = {
 };
 
 function SavedSearchesPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [dialog, confirm] = useConfirmDialog();
 
@@ -44,7 +46,7 @@ function SavedSearchesPage() {
   const remove = useMutation({
     mutationFn: (id: string) => api(`/v1/admin/saved-searches/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["saved-searches"] }),
-    meta: { successMessage: "Saved search deleted" },
+    meta: { successMessage: t("pages.savedSearches.deletedToast") },
   });
 
   const rows = listQ.data ?? [];
@@ -52,8 +54,8 @@ function SavedSearchesPage() {
   return (
     <>
       <PageHeader
-        title="Saved Searches"
-        description="Reusable LogQL++ statements the team can re-run from Log Search in one click."
+        title={t("pages.savedSearches.title")}
+        description={t("pages.savedSearches.description")}
       />
 
       <Card>
@@ -66,11 +68,11 @@ function SavedSearchesPage() {
             empty={
               <EmptyState
                 icon={BookmarkIcon}
-                title="No saved searches"
-                description="Save a query from Log Search to pin it here for the whole tenant."
+                title={t("pages.savedSearches.emptyTitle")}
+                description={t("pages.savedSearches.emptyDescription")}
                 action={
                   <Button render={<Link to="/search" />}>
-                    <PlayIcon /> Go to Log Search
+                    <PlayIcon /> {t("pages.savedSearches.goToSearch")}
                   </Button>
                 }
               />
@@ -80,10 +82,10 @@ function SavedSearchesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Query</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="w-28 text-right">Actions</TableHead>
+                  <TableHead>{t("columns.name")}</TableHead>
+                  <TableHead>{t("columns.query")}</TableHead>
+                  <TableHead>{t("columns.created")}</TableHead>
+                  <TableHead className="w-28 text-right">{t("columns.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -101,7 +103,7 @@ function SavedSearchesPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          aria-label={`Run ${s.name}`}
+                          aria-label={t("pages.savedSearches.runAria", { name: s.name })}
                           render={<Link to="/search" search={{ q: s.query_text }} />}
                         >
                           <PlayIcon />
@@ -109,11 +111,11 @@ function SavedSearchesPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          aria-label={`Delete ${s.name}`}
+                          aria-label={t("pages.savedSearches.deleteAria", { name: s.name })}
                           onClick={() =>
                             confirm({
-                              title: `Delete "${s.name}"?`,
-                              confirmLabel: "Delete",
+                              title: t("pages.savedSearches.deleteTitle", { name: s.name }),
+                              confirmLabel: t("actions.delete"),
                               onConfirm: () => remove.mutate(s.id),
                             })
                           }

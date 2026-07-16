@@ -5,6 +5,7 @@ import { createRootRouteWithContext, HeadContent, Scripts } from "@tanstack/reac
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import type { ReactNode } from "react";
 import { Toaster } from "sonner";
+import { NotFound, RouteError } from "../components/error-state";
 import { APP_TITLE } from "../env";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import appCss from "../styles.css?url";
@@ -31,6 +32,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),
+  errorComponent: ({ error, reset }) => <RouteError error={error} reset={reset} />,
+  notFoundComponent: () => <NotFound />,
   shellComponent: RootDocument,
 });
 

@@ -11,6 +11,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ArrowRightIcon, NetworkIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { PageHeader } from "@/components/page-header";
 import { api } from "@/lib/api";
@@ -42,6 +43,7 @@ function healthKind(node: TopoNode): "success" | "warning" | "danger" | "muted" 
 }
 
 function TopologyPage() {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ["topology"],
     queryFn: () => api<Topology>("/v1/topology"),
@@ -55,10 +57,7 @@ function TopologyPage() {
 
   return (
     <>
-      <PageHeader
-        title="Service Topology"
-        description="Service dependency map inferred from trace and log correlation, coloured by health."
-      />
+      <PageHeader title={t("pages.topology.title")} description={t("pages.topology.description")} />
 
       <DataState
         isLoading={q.isLoading}
@@ -70,8 +69,8 @@ function TopologyPage() {
             <CardContent className="pt-6">
               <EmptyState
                 icon={NetworkIcon}
-                title="No topology yet"
-                description="The service graph builds up as correlated request/response logs are ingested across services."
+                title={t("pages.topology.emptyTitle")}
+                description={t("pages.topology.emptyDescription")}
               />
             </CardContent>
           </Card>
@@ -86,14 +85,23 @@ function TopologyPage() {
                 <CardHeader className="flex-row items-center justify-between gap-2">
                   <CardTitle className="truncate text-sm">{n.name ?? n.service ?? n.id}</CardTitle>
                   <StatusPill kind={healthKind(n)} dot>
-                    {n.health ?? `${Math.round((n.error_rate ?? 0) * 100)}% err`}
+                    {n.health ??
+                      t("pages.topology.errShort", {
+                        percent: Math.round((n.error_rate ?? 0) * 100),
+                      })}
                   </StatusPill>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-2">
                   <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    {typeof n.rps === "number" && <Badge variant="muted">{n.rps} rps</Badge>}
+                    {typeof n.rps === "number" && (
+                      <Badge variant="muted">{t("pages.topology.rps", { count: n.rps })}</Badge>
+                    )}
                     {typeof n.error_rate === "number" && (
-                      <Badge variant="muted">{(n.error_rate * 100).toFixed(2)}% errors</Badge>
+                      <Badge variant="muted">
+                        {t("pages.topology.errorsPercent", {
+                          percent: (n.error_rate * 100).toFixed(2),
+                        })}
+                      </Badge>
                     )}
                   </div>
                   {deps.length > 0 ? (
@@ -114,7 +122,9 @@ function TopologyPage() {
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-xs text-muted-foreground">No downstream dependencies.</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t("pages.topology.noDownstream")}
+                    </p>
                   )}
                 </CardContent>
               </Card>

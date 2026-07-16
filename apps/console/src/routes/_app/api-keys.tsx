@@ -30,6 +30,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { KeyRoundIcon, Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
@@ -62,6 +63,7 @@ const ALL_SCOPES = [
 ] as const;
 
 function ApiKeysPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [dialog, confirm] = useConfirmDialog();
   const [open, setOpen] = useState(false);
@@ -86,13 +88,13 @@ function ApiKeysPage() {
       setScopes(new Set(["logs:read", "logs:query"]));
       setCreated(key);
     },
-    meta: { successMessage: "API key created" },
+    meta: { successMessage: t("pages.apiKeys.createdToast") },
   });
 
   const revokeKey = useMutation({
     mutationFn: (id: string) => api(`/v1/admin/api-keys/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["api-keys"] }),
-    meta: { successMessage: "API key revoked" },
+    meta: { successMessage: t("pages.apiKeys.revokedToast") },
   });
 
   function toggleScope(s: string) {
@@ -109,11 +111,11 @@ function ApiKeysPage() {
   return (
     <>
       <PageHeader
-        title="API Keys"
-        description="Scoped keys resolve to this tenant. The raw secret is shown once at creation and never again."
+        title={t("pages.apiKeys.title")}
+        description={t("pages.apiKeys.description")}
         actions={
           <Button onClick={() => setOpen(true)}>
-            <PlusIcon /> New key
+            <PlusIcon /> {t("pages.apiKeys.newKey")}
           </Button>
         }
       />
@@ -128,11 +130,11 @@ function ApiKeysPage() {
             empty={
               <EmptyState
                 icon={KeyRoundIcon}
-                title="No API keys"
-                description="Create a scoped key to authenticate ingest agents, dashboards or the console itself."
+                title={t("pages.apiKeys.emptyTitle")}
+                description={t("pages.apiKeys.emptyDescription")}
                 action={
                   <Button onClick={() => setOpen(true)}>
-                    <PlusIcon /> New key
+                    <PlusIcon /> {t("pages.apiKeys.newKey")}
                   </Button>
                 }
               />
@@ -142,11 +144,11 @@ function ApiKeysPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Prefix</TableHead>
-                  <TableHead>Scopes</TableHead>
-                  <TableHead>Last used</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("columns.name")}</TableHead>
+                  <TableHead>{t("columns.prefix")}</TableHead>
+                  <TableHead>{t("columns.scopes")}</TableHead>
+                  <TableHead>{t("columns.lastUsed")}</TableHead>
+                  <TableHead>{t("columns.status")}</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
@@ -169,11 +171,11 @@ function ApiKeysPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {k.LastUsedAt ? relativeTime(k.LastUsedAt) : "never"}
+                        {k.LastUsedAt ? relativeTime(k.LastUsedAt) : t("pages.apiKeys.never")}
                       </TableCell>
                       <TableCell>
                         <StatusPill kind={revoked ? "danger" : "success"}>
-                          {revoked ? "Revoked" : "Active"}
+                          {revoked ? t("pages.apiKeys.revoked") : t("pages.apiKeys.active")}
                         </StatusPill>
                       </TableCell>
                       <TableCell>
@@ -181,13 +183,12 @@ function ApiKeysPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            aria-label={`Revoke ${k.Name}`}
+                            aria-label={t("pages.apiKeys.revokeAria", { name: k.Name })}
                             onClick={() =>
                               confirm({
-                                title: `Revoke "${k.Name}"?`,
-                                description:
-                                  "Any client using this key will start receiving 401s immediately. This cannot be undone.",
-                                confirmLabel: "Revoke",
+                                title: t("pages.apiKeys.revokeTitle", { name: k.Name }),
+                                description: t("pages.apiKeys.revokeDescription"),
+                                confirmLabel: t("pages.apiKeys.revoke"),
                                 onConfirm: () => revokeKey.mutate(k.ID),
                               })
                             }
@@ -209,21 +210,21 @@ function ApiKeysPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New API key</DialogTitle>
-            <DialogDescription>Pick a name and the scopes this key may use.</DialogDescription>
+            <DialogTitle>{t("pages.apiKeys.createTitle")}</DialogTitle>
+            <DialogDescription>{t("pages.apiKeys.createDescription")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="key-name">Name</Label>
+              <Label htmlFor="key-name">{t("fields.name")}</Label>
               <Input
                 id="key-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="ingest-agent-prod"
+                placeholder={t("pages.apiKeys.namePlaceholder")}
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Scopes</Label>
+              <Label>{t("fields.scopes")}</Label>
               <div className="flex flex-wrap gap-2">
                 {ALL_SCOPES.map((s) => {
                   const on = scopes.has(s);
@@ -244,13 +245,13 @@ function ApiKeysPage() {
             </div>
           </div>
           <DialogFooter>
-            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <DialogClose render={<Button variant="outline">{t("actions.cancel")}</Button>} />
             <Button
               onClick={() => createKey.mutate({ name: name.trim(), scopes: [...scopes] })}
               disabled={!name.trim() || scopes.size === 0 || createKey.isPending}
             >
               {createKey.isPending && <Loader2Icon className="animate-spin" />}
-              Create key
+              {t("pages.apiKeys.createKey")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -260,23 +261,23 @@ function ApiKeysPage() {
       <Dialog open={!!created} onOpenChange={(o) => !o && setCreated(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Copy your API key</DialogTitle>
-            <DialogDescription>
-              This is the only time the full secret is shown. Store it somewhere safe.
-            </DialogDescription>
+            <DialogTitle>{t("pages.apiKeys.revealTitle")}</DialogTitle>
+            <DialogDescription>{t("pages.apiKeys.revealDescription")}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <Alert variant="warning">
               <AlertTitle>{created?.Name}</AlertTitle>
               <AlertDescription>
-                Scopes: {(created?.Scopes ?? []).join(", ")}
-                {created?.ExpiresAt ? ` · expires ${formatDateTime(created.ExpiresAt)}` : ""}
+                {t("fields.scopes")}: {(created?.Scopes ?? []).join(", ")}
+                {created?.ExpiresAt
+                  ? ` · ${t("pages.apiKeys.expires", { date: formatDateTime(created.ExpiresAt) })}`
+                  : ""}
               </AlertDescription>
             </Alert>
             {created?.Key && <CopyableSecret value={created.Key} oneLine />}
           </div>
           <DialogFooter>
-            <DialogClose render={<Button>Done</Button>} />
+            <DialogClose render={<Button>{t("actions.done")}</Button>} />
           </DialogFooter>
         </DialogContent>
       </Dialog>

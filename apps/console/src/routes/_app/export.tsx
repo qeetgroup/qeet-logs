@@ -18,6 +18,7 @@ import { useMutation } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { DownloadIcon, Loader2Icon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -37,6 +38,7 @@ const MIME: Record<Format, string> = {
 };
 
 function ExportPage() {
+  const { t } = useTranslation();
   const [q, setQ] = useState("SELECT timestamp, service, level, body FROM logs LIMIT 10000");
   const [format, setFormat] = useState<Format>("csv");
   const [from, setFrom] = useState("");
@@ -70,30 +72,24 @@ function ExportPage() {
     },
     onSuccess: (text) => {
       downloadText(`qeet-logs-export.${EXT[format]}`, text, MIME[format]);
-      toast.success("Export downloaded");
+      toast.success(t("pages.export.downloaded"));
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Export failed"),
+    onError: (err) => toast.error(err instanceof Error ? err.message : t("pages.export.failed")),
     meta: { silent: true },
   });
 
   return (
     <>
-      <PageHeader
-        title="Export"
-        description="Run a LogQL++ statement and stream the full result set to a file for the current tenant."
-      />
+      <PageHeader title={t("pages.export.title")} description={t("pages.export.description")} />
 
       <Card className="max-w-2xl">
         <CardHeader>
-          <CardTitle className="text-sm">Export query</CardTitle>
-          <CardDescription>
-            Exports honour tenant isolation and your retention window. Large exports stream
-            server-side.
-          </CardDescription>
+          <CardTitle className="text-sm">{t("pages.export.cardTitle")}</CardTitle>
+          <CardDescription>{t("pages.export.cardDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="ex-query">Query</Label>
+            <Label htmlFor="ex-query">{t("pages.export.queryLabel")}</Label>
             <Textarea
               id="ex-query"
               rows={4}
@@ -104,7 +100,7 @@ function ExportPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="flex flex-col gap-2">
-              <Label>Format</Label>
+              <Label>{t("pages.export.format")}</Label>
               <Select value={format} onValueChange={(v) => setFormat(v as Format)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -117,7 +113,7 @@ function ExportPage() {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="ex-from">From (optional)</Label>
+              <Label htmlFor="ex-from">{t("pages.export.fromOptional")}</Label>
               <Input
                 id="ex-from"
                 type="datetime-local"
@@ -126,7 +122,7 @@ function ExportPage() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="ex-to">To (optional)</Label>
+              <Label htmlFor="ex-to">{t("pages.export.toOptional")}</Label>
               <Input
                 id="ex-to"
                 type="datetime-local"
@@ -138,7 +134,7 @@ function ExportPage() {
           <div>
             <Button onClick={() => run.mutate()} disabled={!q.trim() || run.isPending}>
               {run.isPending ? <Loader2Icon className="animate-spin" /> : <DownloadIcon />}
-              Download export
+              {t("pages.export.download")}
             </Button>
           </div>
         </CardContent>

@@ -15,6 +15,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { HistoryIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { PageHeader } from "@/components/page-header";
 import { api } from "@/lib/api";
@@ -51,6 +52,7 @@ function kindVariant(
 }
 
 function TimelinePage() {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ["timeline"],
     queryFn: () => api<{ events?: TimelineEvent[] } | TimelineEvent[]>("/v1/timeline"),
@@ -62,10 +64,7 @@ function TimelinePage() {
 
   return (
     <>
-      <PageHeader
-        title="Timeline"
-        description="A unified chronology of incidents, deploys, alerts and config changes across your services."
-      />
+      <PageHeader title={t("pages.timeline.title")} description={t("pages.timeline.description")} />
 
       <Card>
         <CardContent className="pt-6">
@@ -77,8 +76,8 @@ function TimelinePage() {
             empty={
               <EmptyState
                 icon={HistoryIcon}
-                title="Nothing on the timeline yet"
-                description="Incidents, deploys and alerts appear here in order as they happen."
+                title={t("pages.timeline.emptyTitle")}
+                description={t("pages.timeline.emptyDescription")}
               />
             }
             skeletonRows={6}
@@ -89,7 +88,9 @@ function TimelinePage() {
                   <TimelineIndicator />
                   <TimelineContent>
                     <TimelineTitle className="flex items-center gap-2">
-                      <Badge variant={kindVariant(e.kind)}>{e.kind ?? "event"}</Badge>
+                      <Badge variant={kindVariant(e.kind)}>
+                        {e.kind ?? t("pages.timeline.event")}
+                      </Badge>
                       <span className="truncate">{e.title ?? e.id}</span>
                       {e.service ? (
                         <span className="text-xs text-muted-foreground">· {e.service}</span>

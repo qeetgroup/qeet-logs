@@ -16,10 +16,11 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ScrollTextIcon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { PageHeader } from "@/components/page-header";
 import { api } from "@/lib/api";
-import { formatDateTime, formatNumber } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/audit")({ component: AuditPage });
 
@@ -43,6 +44,7 @@ function statusKind(status: string): "success" | "danger" | "muted" {
 }
 
 function AuditPage() {
+  const { t } = useTranslation();
   const [actor, setActor] = useState("");
   const [action, setAction] = useState("");
 
@@ -61,29 +63,26 @@ function AuditPage() {
 
   return (
     <>
-      <PageHeader
-        title="Audit Log"
-        description="Tamper-evident record of every query and admin action for this tenant."
-      />
+      <PageHeader title={t("pages.audit.title")} description={t("pages.audit.description")} />
 
       <Card>
         <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
           <Input
-            placeholder="Filter by actor…"
+            placeholder={t("pages.audit.filterActor")}
             value={actor}
             onChange={(e) => setActor(e.target.value)}
             className="sm:max-w-xs"
-            aria-label="Filter by actor"
+            aria-label={t("pages.audit.filterActor")}
           />
           <Input
-            placeholder="Filter by action…"
+            placeholder={t("pages.audit.filterAction")}
             value={action}
             onChange={(e) => setAction(e.target.value)}
             className="sm:max-w-xs"
-            aria-label="Filter by action"
+            aria-label={t("pages.audit.filterAction")}
           />
           <span className="text-xs text-muted-foreground sm:ms-auto">
-            {formatNumber(q.data?.total ?? 0)} total
+            {t("pages.audit.total", { count: q.data?.total ?? 0 })}
           </span>
         </CardContent>
       </Card>
@@ -96,19 +95,19 @@ function AuditPage() {
             error={q.error}
             isEmpty={!q.isLoading && entries.length === 0}
             emptyIcon={ScrollTextIcon}
-            emptyTitle="No audit entries"
-            emptyDescription="Actions and queries appear here as they happen."
+            emptyTitle={t("pages.audit.emptyTitle")}
+            emptyDescription={t("pages.audit.emptyDescription")}
             skeletonRows={8}
           >
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>When</TableHead>
-                  <TableHead>Actor</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Resource</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>IP</TableHead>
+                  <TableHead>{t("columns.when")}</TableHead>
+                  <TableHead>{t("columns.actor")}</TableHead>
+                  <TableHead>{t("columns.action")}</TableHead>
+                  <TableHead>{t("columns.resource")}</TableHead>
+                  <TableHead>{t("columns.status")}</TableHead>
+                  <TableHead>{t("columns.ip")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

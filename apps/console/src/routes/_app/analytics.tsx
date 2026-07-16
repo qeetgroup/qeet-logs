@@ -15,6 +15,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ChartColumnIcon, GaugeIcon, TimerIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { CartesianGrid, Line, LineChart, XAxis } from "recharts";
 
 import { PageHeader } from "@/components/page-header";
@@ -44,6 +45,7 @@ function ms(v: number | undefined): string {
 }
 
 function AnalyticsPage() {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ["analytics", "ttfiq"],
     queryFn: () => api<Ttfiq>("/v1/analytics/ttfiq"),
@@ -60,8 +62,8 @@ function AnalyticsPage() {
   return (
     <>
       <PageHeader
-        title="Analytics"
-        description="TTFIQ — time to first insight/query: how fast an operator gets from a log arriving to an answer."
+        title={t("pages.analytics.title")}
+        description={t("pages.analytics.description")}
       />
 
       <DataState
@@ -74,8 +76,8 @@ function AnalyticsPage() {
             <CardContent className="pt-6">
               <EmptyState
                 icon={ChartColumnIcon}
-                title="No analytics yet"
-                description="TTFIQ percentiles populate as queries and incidents accumulate for the tenant."
+                title={t("pages.analytics.emptyTitle")}
+                description={t("pages.analytics.emptyDescription")}
               />
             </CardContent>
           </Card>
@@ -83,21 +85,25 @@ function AnalyticsPage() {
         skeletonRows={4}
       >
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="p50 TTFIQ" value={ms(q.data?.p50_ms)} icon={TimerIcon} />
-          <Stat label="p90 TTFIQ" value={ms(q.data?.p90_ms)} icon={TimerIcon} />
-          <Stat label="p99 TTFIQ" value={ms(q.data?.p99_ms)} icon={GaugeIcon} />
-          <Stat label="Samples" value={formatNumber(q.data?.samples ?? 0)} icon={ChartColumnIcon} />
+          <Stat label={t("pages.analytics.p50")} value={ms(q.data?.p50_ms)} icon={TimerIcon} />
+          <Stat label={t("pages.analytics.p90")} value={ms(q.data?.p90_ms)} icon={TimerIcon} />
+          <Stat label={t("pages.analytics.p99")} value={ms(q.data?.p99_ms)} icon={GaugeIcon} />
+          <Stat
+            label={t("pages.analytics.samples")}
+            value={formatNumber(q.data?.samples ?? 0)}
+            icon={ChartColumnIcon}
+          />
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">TTFIQ over time</CardTitle>
-            <CardDescription>p50 and p90 latency to first insight, by bucket.</CardDescription>
+            <CardTitle className="text-sm">{t("pages.analytics.seriesTitle")}</CardTitle>
+            <CardDescription>{t("pages.analytics.seriesDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
             {series.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground">
-                No time series available for this period.
+                {t("pages.analytics.noSeries")}
               </p>
             ) : (
               <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full">

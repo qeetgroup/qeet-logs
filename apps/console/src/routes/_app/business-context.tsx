@@ -31,6 +31,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Building2Icon, Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
@@ -60,6 +61,7 @@ function asList(data: unknown): BusinessContext[] {
 }
 
 function BusinessContextPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [dialog, confirm] = useConfirmDialog();
   const [open, setOpen] = useState(false);
@@ -91,13 +93,13 @@ function BusinessContextPage() {
         revenue_per_hour: 0,
       });
     },
-    meta: { successMessage: "Business context saved" },
+    meta: { successMessage: t("pages.businessContext.savedToast") },
   });
 
   const remove = useMutation({
     mutationFn: (id: string) => api(`/v1/admin/business-context/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["business-context"] }),
-    meta: { successMessage: "Business context deleted" },
+    meta: { successMessage: t("pages.businessContext.deletedToast") },
   });
 
   const rows = listQ.data ?? [];
@@ -105,11 +107,11 @@ function BusinessContextPage() {
   return (
     <>
       <PageHeader
-        title="Business Context"
-        description="Map services to their business owner, tier and revenue so incidents surface real-world impact."
+        title={t("pages.businessContext.title")}
+        description={t("pages.businessContext.description")}
         actions={
           <Button onClick={() => setOpen(true)}>
-            <PlusIcon /> Add mapping
+            <PlusIcon /> {t("pages.businessContext.addMapping")}
           </Button>
         }
       />
@@ -123,11 +125,11 @@ function BusinessContextPage() {
             empty={
               <EmptyState
                 icon={Building2Icon}
-                title="No business context"
-                description="Add a mapping to enrich incidents with affected revenue, owning team and service tier."
+                title={t("pages.businessContext.emptyTitle")}
+                description={t("pages.businessContext.emptyDescription")}
                 action={
                   <Button onClick={() => setOpen(true)}>
-                    <PlusIcon /> Add mapping
+                    <PlusIcon /> {t("pages.businessContext.addMapping")}
                   </Button>
                 }
               />
@@ -137,10 +139,10 @@ function BusinessContextPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Service</TableHead>
-                  <TableHead>Tier</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead>Revenue / hr</TableHead>
+                  <TableHead>{t("columns.service")}</TableHead>
+                  <TableHead>{t("columns.tier")}</TableHead>
+                  <TableHead>{t("columns.owner")}</TableHead>
+                  <TableHead>{t("columns.revenuePerHour")}</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
@@ -159,11 +161,11 @@ function BusinessContextPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={`Delete ${c.service}`}
+                        aria-label={t("pages.businessContext.deleteAria", { service: c.service })}
                         onClick={() =>
                           confirm({
-                            title: `Delete mapping for "${c.service}"?`,
-                            confirmLabel: "Delete",
+                            title: t("pages.businessContext.deleteTitle", { service: c.service }),
+                            confirmLabel: t("actions.delete"),
                             onConfirm: () => remove.mutate(c.id),
                           })
                         }
@@ -182,22 +184,22 @@ function BusinessContextPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Business context</DialogTitle>
-            <DialogDescription>Describe what a service means to the business.</DialogDescription>
+            <DialogTitle>{t("pages.businessContext.dialogTitle")}</DialogTitle>
+            <DialogDescription>{t("pages.businessContext.dialogDescription")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="bc-service">Service</Label>
+                <Label htmlFor="bc-service">{t("fields.service")}</Label>
                 <Input
                   id="bc-service"
                   value={form.service}
                   onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))}
-                  placeholder="checkout"
+                  placeholder={t("pages.businessContext.servicePlaceholder")}
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <Label>Tier</Label>
+                <Label>{t("fields.tier")}</Label>
                 <Select
                   value={form.tier}
                   onValueChange={(v) => setForm((f) => ({ ...f, tier: v ?? "standard" }))}
@@ -217,16 +219,16 @@ function BusinessContextPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="bc-owner">Owning team</Label>
+                <Label htmlFor="bc-owner">{t("pages.businessContext.owningTeam")}</Label>
                 <Input
                   id="bc-owner"
                   value={form.owner_team}
                   onChange={(e) => setForm((f) => ({ ...f, owner_team: e.target.value }))}
-                  placeholder="payments"
+                  placeholder={t("pages.businessContext.owningTeamPlaceholder")}
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="bc-rev">Revenue / hr ($)</Label>
+                <Label htmlFor="bc-rev">{t("pages.businessContext.revenuePerHourDollar")}</Label>
                 <Input
                   id="bc-rev"
                   type="number"
@@ -238,24 +240,24 @@ function BusinessContextPage() {
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="bc-desc">Description</Label>
+              <Label htmlFor="bc-desc">{t("fields.description")}</Label>
               <Textarea
                 id="bc-desc"
                 rows={2}
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                placeholder="Handles order checkout and payment capture."
+                placeholder={t("pages.businessContext.descriptionPlaceholder")}
               />
             </div>
           </div>
           <DialogFooter>
-            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <DialogClose render={<Button variant="outline">{t("actions.cancel")}</Button>} />
             <Button
               onClick={() => create.mutate(form)}
               disabled={!form.service?.trim() || create.isPending}
             >
               {create.isPending && <Loader2Icon className="animate-spin" />}
-              Save
+              {t("actions.save")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -13,6 +13,7 @@ import {
 import { createFileRoute } from "@tanstack/react-router";
 import { PauseIcon, PlayIcon, RadioIcon, SquareIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { PageHeader } from "@/components/page-header";
 import { wsURL } from "@/lib/api";
@@ -27,6 +28,7 @@ type TailRow = Record<string, unknown>;
 type ConnState = "idle" | "connecting" | "open" | "closed" | "error";
 
 function TailPage() {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState(DEFAULT_TAIL);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(false);
@@ -87,18 +89,18 @@ function TailPage() {
     ConnState,
     { kind: Parameters<typeof StatusPill>[0]["kind"]; label: string }
   > = {
-    idle: { kind: "muted", label: "Idle" },
-    connecting: { kind: "warning", label: "Connecting…" },
-    open: { kind: "success", label: "Streaming" },
-    closed: { kind: "muted", label: "Closed" },
-    error: { kind: "danger", label: "Error" },
+    idle: { kind: "muted", label: t("pages.tail.stateIdle") },
+    connecting: { kind: "warning", label: t("pages.tail.stateConnecting") },
+    open: { kind: "success", label: t("pages.tail.stateOpen") },
+    closed: { kind: "muted", label: t("pages.tail.stateClosed") },
+    error: { kind: "danger", label: t("pages.tail.stateError") },
   };
 
   return (
     <>
       <PageHeader
-        title="Live Tail"
-        description="Stream matching records in real time over a WebSocket. Uses a TAIL LogQL++ statement — no ClickHouse scan."
+        title={t("pages.tail.title")}
+        description={t("pages.tail.description")}
         actions={<StatusPill kind={stateBadge[state].kind}>{stateBadge[state].label}</StatusPill>}
       />
 
@@ -108,7 +110,7 @@ function TailPage() {
             value={draft}
             spellCheck={false}
             className="font-mono-logs text-sm"
-            aria-label="TAIL query"
+            aria-label={t("pages.tail.queryAria")}
             placeholder="TAIL FROM logs WHERE service = &quot;checkout&quot;"
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -118,16 +120,16 @@ function TailPage() {
           <div className="flex shrink-0 items-center gap-2">
             {!active ? (
               <Button onClick={start} disabled={!draft.trim()}>
-                <PlayIcon /> Start
+                <PlayIcon /> {t("pages.tail.start")}
               </Button>
             ) : (
               <>
                 <Button variant="outline" onClick={() => setPaused((p) => !p)}>
                   {paused ? <PlayIcon /> : <PauseIcon />}
-                  {paused ? "Resume" : "Pause"}
+                  {paused ? t("pages.tail.resume") : t("pages.tail.pause")}
                 </Button>
                 <Button variant="destructive" onClick={stop}>
-                  <SquareIcon /> Stop
+                  <SquareIcon /> {t("pages.tail.stop")}
                 </Button>
               </>
             )}
@@ -139,7 +141,7 @@ function TailPage() {
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-sm">
             <RadioIcon className="size-4 text-muted-foreground" />
-            Stream
+            {t("pages.tail.stream")}
             <Badge variant="muted">{rows.length}</Badge>
           </CardTitle>
           <Button
@@ -148,18 +150,18 @@ function TailPage() {
             onClick={() => setRows([])}
             disabled={rows.length === 0}
           >
-            <Trash2Icon /> Clear
+            <Trash2Icon /> {t("actions.clear")}
           </Button>
         </CardHeader>
         <CardContent>
           {rows.length === 0 ? (
             <EmptyState
               icon={RadioIcon}
-              title={active ? "Waiting for matching records…" : "Not streaming"}
+              title={active ? t("pages.tail.waitingTitle") : t("pages.tail.notStreamingTitle")}
               description={
                 active
-                  ? "New records for the current tenant appear here as they are ingested."
-                  : "Enter a TAIL statement and press Start to open the stream."
+                  ? t("pages.tail.waitingDescription")
+                  : t("pages.tail.notStreamingDescription")
               }
             />
           ) : (

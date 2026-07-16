@@ -23,6 +23,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { LayoutPanelLeftIcon, Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
@@ -46,6 +47,7 @@ function panelCount(panels: unknown): number {
 }
 
 function DashboardsPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [dialog, confirm] = useConfirmDialog();
   const [open, setOpen] = useState(false);
@@ -69,13 +71,13 @@ function DashboardsPage() {
       setName("");
       setPanelsText("[]");
     },
-    meta: { successMessage: "Dashboard created" },
+    meta: { successMessage: t("pages.dashboards.createdToast") },
   });
 
   const remove = useMutation({
     mutationFn: (id: string) => api(`/v1/admin/dashboards/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["dashboards"] }),
-    meta: { successMessage: "Dashboard deleted" },
+    meta: { successMessage: t("pages.dashboards.deletedToast") },
   });
 
   function submit() {
@@ -84,7 +86,7 @@ function DashboardsPage() {
       panels = panelsText.trim() ? JSON.parse(panelsText) : [];
       setPanelsError(null);
     } catch {
-      setPanelsError("Panels must be valid JSON.");
+      setPanelsError(t("pages.dashboards.panelsInvalid"));
       return;
     }
     create.mutate({ name: name.trim(), panels });
@@ -95,11 +97,11 @@ function DashboardsPage() {
   return (
     <>
       <PageHeader
-        title="Dashboards"
-        description="Saved panel layouts of LogQL++ charts and tables for the tenant."
+        title={t("pages.dashboards.title")}
+        description={t("pages.dashboards.description")}
         actions={
           <Button onClick={() => setOpen(true)}>
-            <PlusIcon /> New dashboard
+            <PlusIcon /> {t("pages.dashboards.newDashboard")}
           </Button>
         }
       />
@@ -114,11 +116,11 @@ function DashboardsPage() {
             <CardContent className="pt-6">
               <EmptyState
                 icon={LayoutPanelLeftIcon}
-                title="No dashboards"
-                description="Compose charts and tables into a saved dashboard for at-a-glance monitoring."
+                title={t("pages.dashboards.emptyTitle")}
+                description={t("pages.dashboards.emptyDescription")}
                 action={
                   <Button onClick={() => setOpen(true)}>
-                    <PlusIcon /> New dashboard
+                    <PlusIcon /> {t("pages.dashboards.newDashboard")}
                   </Button>
                 }
               />
@@ -134,17 +136,19 @@ function DashboardsPage() {
                 <div className="min-w-0">
                   <CardTitle className="truncate">{d.name}</CardTitle>
                   <CardDescription>
-                    Updated {relativeTime(d.updated_at ?? d.created_at)}
+                    {t("pages.dashboards.updated", {
+                      time: relativeTime(d.updated_at ?? d.created_at),
+                    })}
                   </CardDescription>
                 </div>
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label={`Delete ${d.name}`}
+                  aria-label={t("pages.dashboards.deleteAria", { name: d.name })}
                   onClick={() =>
                     confirm({
-                      title: `Delete "${d.name}"?`,
-                      confirmLabel: "Delete",
+                      title: t("pages.dashboards.deleteTitle", { name: d.name }),
+                      confirmLabel: t("actions.delete"),
                       onConfirm: () => remove.mutate(d.id),
                     })
                   }
@@ -153,7 +157,9 @@ function DashboardsPage() {
                 </Button>
               </CardHeader>
               <CardContent>
-                <Badge variant="muted">{panelCount(d.panels)} panels</Badge>
+                <Badge variant="muted">
+                  {t("pages.dashboards.panels", { count: panelCount(d.panels) })}
+                </Badge>
               </CardContent>
             </Card>
           ))}
@@ -163,23 +169,21 @@ function DashboardsPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New dashboard</DialogTitle>
-            <DialogDescription>
-              Name the dashboard and optionally seed its panel layout as JSON.
-            </DialogDescription>
+            <DialogTitle>{t("pages.dashboards.createTitle")}</DialogTitle>
+            <DialogDescription>{t("pages.dashboards.createDescription")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="db-name">Name</Label>
+              <Label htmlFor="db-name">{t("fields.name")}</Label>
               <Input
                 id="db-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Checkout health"
+                placeholder={t("pages.dashboards.namePlaceholder")}
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="db-panels">Panels (JSON)</Label>
+              <Label htmlFor="db-panels">{t("pages.dashboards.panelsLabel")}</Label>
               <Textarea
                 id="db-panels"
                 rows={5}
@@ -191,10 +195,10 @@ function DashboardsPage() {
             </div>
           </div>
           <DialogFooter>
-            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <DialogClose render={<Button variant="outline">{t("actions.cancel")}</Button>} />
             <Button onClick={submit} disabled={!name.trim() || create.isPending}>
               {create.isPending && <Loader2Icon className="animate-spin" />}
-              Create
+              {t("actions.create")}
             </Button>
           </DialogFooter>
         </DialogContent>

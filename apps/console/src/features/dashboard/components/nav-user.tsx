@@ -21,6 +21,7 @@ import {
   LogOutIcon,
   Settings2Icon,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { keyPrefix, useReadyz, useSignOut } from "@/lib/auth";
 
@@ -28,7 +29,8 @@ export function NavUser() {
   const { isMobile } = useSidebar();
   const signOut = useSignOut();
   const readyz = useReadyz();
-  const prefix = keyPrefix() ?? "No key";
+  const { t } = useTranslation();
+  const prefix = keyPrefix() ?? t("userMenu.noKey");
   const healthy = readyz.data?.healthy ?? readyz.isSuccess;
 
   return (
@@ -44,7 +46,7 @@ export function NavUser() {
               </AvatarFallback>
             </Avatar>
             <div className="grid flex-1 text-start text-sm leading-tight">
-              <span className="truncate font-medium">API key</span>
+              <span className="truncate font-medium">{t("userMenu.apiKey")}</span>
               <span className="truncate font-mono-logs text-xs text-muted-foreground">
                 {prefix}
               </span>
@@ -60,9 +62,9 @@ export function NavUser() {
             <DropdownMenuGroup>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium">Signed in with API key</span>
+                  <span className="text-sm font-medium">{t("userMenu.signedIn")}</span>
                   <span className="text-xs text-muted-foreground">
-                    Backend: {healthy ? "healthy" : "unreachable"}
+                    {healthy ? t("userMenu.backendHealthy") : t("userMenu.backendUnreachable")}
                   </span>
                 </div>
               </DropdownMenuLabel>
@@ -71,11 +73,11 @@ export function NavUser() {
             <DropdownMenuGroup>
               <DropdownMenuItem render={<Link to="/api-keys" />}>
                 <KeyRoundIcon />
-                API Keys
+                {t("userMenu.apiKeys")}
               </DropdownMenuItem>
               <DropdownMenuItem render={<Link to="/settings" />}>
                 <Settings2Icon />
-                Settings
+                {t("userMenu.settings")}
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
@@ -85,7 +87,7 @@ export function NavUser() {
               disabled={signOut.isPending}
             >
               {signOut.isPending ? <Loader2Icon className="animate-spin" /> : <LogOutIcon />}
-              {signOut.isPending ? "Signing out…" : "Sign out"}
+              {signOut.isPending ? t("userMenu.signingOut") : t("userMenu.signOut")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

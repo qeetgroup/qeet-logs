@@ -26,6 +26,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { FileDownIcon, FileTextIcon, Loader2Icon, PlusIcon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { PageHeader } from "@/components/page-header";
 import { api } from "@/lib/api";
@@ -51,6 +52,7 @@ function asList(data: unknown): Postmortem[] {
 }
 
 function PostmortemsPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: "", incident_id: "", summary: "" });
@@ -70,7 +72,7 @@ function PostmortemsPage() {
       setOpen(false);
       setForm({ title: "", incident_id: "", summary: "" });
     },
-    meta: { successMessage: "Postmortem created" },
+    meta: { successMessage: t("pages.postmortems.createdToast") },
   });
 
   const certExport = useMutation({
@@ -81,7 +83,7 @@ function PostmortemsPage() {
         JSON.stringify(report, null, 2),
         "application/json",
       ),
-    meta: { successMessage: "CERT-In report downloaded" },
+    meta: { successMessage: t("pages.postmortems.certExportToast") },
   });
 
   const rows = listQ.data ?? [];
@@ -89,11 +91,11 @@ function PostmortemsPage() {
   return (
     <>
       <PageHeader
-        title="Postmortems"
-        description="Incident writeups with a one-click CERT-In (Indian 6-hour incident reporting) export."
+        title={t("pages.postmortems.title")}
+        description={t("pages.postmortems.description")}
         actions={
           <Button onClick={() => setOpen(true)}>
-            <PlusIcon /> New postmortem
+            <PlusIcon /> {t("pages.postmortems.newPostmortem")}
           </Button>
         }
       />
@@ -107,11 +109,11 @@ function PostmortemsPage() {
             empty={
               <EmptyState
                 icon={FileTextIcon}
-                title="No postmortems"
-                description="Write up a resolved incident to capture the timeline, root cause and follow-ups."
+                title={t("pages.postmortems.emptyTitle")}
+                description={t("pages.postmortems.emptyDescription")}
                 action={
                   <Button onClick={() => setOpen(true)}>
-                    <PlusIcon /> New postmortem
+                    <PlusIcon /> {t("pages.postmortems.newPostmortem")}
                   </Button>
                 }
               />
@@ -121,11 +123,11 @@ function PostmortemsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Author</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="w-32 text-right">CERT-In</TableHead>
+                  <TableHead>{t("columns.title")}</TableHead>
+                  <TableHead>{t("columns.status")}</TableHead>
+                  <TableHead>{t("columns.author")}</TableHead>
+                  <TableHead>{t("columns.created")}</TableHead>
+                  <TableHead className="w-32 text-right">{t("columns.certIn")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -136,7 +138,7 @@ function PostmortemsPage() {
                     </TableCell>
                     <TableCell>
                       <StatusPill kind={p.status === "published" ? "success" : "muted"}>
-                        {p.status ?? "draft"}
+                        {p.status ?? t("pages.postmortems.draft")}
                       </StatusPill>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{p.author ?? "—"}</TableCell>
@@ -150,7 +152,7 @@ function PostmortemsPage() {
                         disabled={certExport.isPending}
                         onClick={() => certExport.mutate(p.id)}
                       >
-                        <FileDownIcon /> Export
+                        <FileDownIcon /> {t("pages.postmortems.export")}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -164,21 +166,21 @@ function PostmortemsPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New postmortem</DialogTitle>
-            <DialogDescription>Capture the writeup for a resolved incident.</DialogDescription>
+            <DialogTitle>{t("pages.postmortems.createTitle")}</DialogTitle>
+            <DialogDescription>{t("pages.postmortems.createDescription")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="pm-title">Title</Label>
+              <Label htmlFor="pm-title">{t("fields.title")}</Label>
               <Input
                 id="pm-title"
                 value={form.title}
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                placeholder="Checkout 5xx spike — 2026-07-14"
+                placeholder={t("pages.postmortems.titlePlaceholder")}
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="pm-incident">Incident ID (optional)</Label>
+              <Label htmlFor="pm-incident">{t("pages.postmortems.incidentOptional")}</Label>
               <Input
                 id="pm-incident"
                 className="font-mono-logs"
@@ -187,18 +189,18 @@ function PostmortemsPage() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="pm-summary">Summary</Label>
+              <Label htmlFor="pm-summary">{t("fields.summary")}</Label>
               <Textarea
                 id="pm-summary"
                 rows={4}
                 value={form.summary}
                 onChange={(e) => setForm((f) => ({ ...f, summary: e.target.value }))}
-                placeholder="What happened, impact, root cause, and follow-up actions."
+                placeholder={t("pages.postmortems.summaryPlaceholder")}
               />
             </div>
           </div>
           <DialogFooter>
-            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <DialogClose render={<Button variant="outline">{t("actions.cancel")}</Button>} />
             <Button
               onClick={() =>
                 create.mutate({
@@ -210,7 +212,7 @@ function PostmortemsPage() {
               disabled={!form.title.trim() || create.isPending}
             >
               {create.isPending && <Loader2Icon className="animate-spin" />}
-              Create
+              {t("actions.create")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2Icon, PlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { PageHeader } from "@/components/page-header";
 import { api } from "@/lib/api";
@@ -35,6 +36,7 @@ const ACTIONS = ["redact", "hash", "mask", "drop"] as const;
 type MaskRow = { field: string; action: string };
 
 function SettingsPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [days, setDays] = useState(7);
   const [rows, setRows] = useState<MaskRow[]>([]);
@@ -61,7 +63,7 @@ function SettingsPage() {
   const save = useMutation({
     mutationFn: (body: Retention) => api("/v1/admin/retention", { method: "PUT", body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["retention"] }),
-    meta: { successMessage: "Settings saved" },
+    meta: { successMessage: t("pages.settings.saved") },
   });
 
   function submit() {
@@ -75,12 +77,12 @@ function SettingsPage() {
   return (
     <>
       <PageHeader
-        title="Settings"
-        description="Per-tenant retention window and the PII transforms applied at ingest time."
+        title={t("pages.settings.title")}
+        description={t("pages.settings.description")}
         actions={
           <Button onClick={submit} disabled={save.isPending}>
             {save.isPending ? <Loader2Icon className="animate-spin" /> : <SaveIcon />}
-            Save changes
+            {t("actions.saveChanges")}
           </Button>
         }
       />
@@ -94,17 +96,19 @@ function SettingsPage() {
         <div className="grid gap-4">
           <Card>
             <CardHeader>
-              <CardTitle>Retention</CardTitle>
+              <CardTitle>{t("pages.settings.retentionTitle")}</CardTitle>
               <CardDescription>
-                Logs older than this window are dropped by the TTL policy. Range 1–3650 days.
+                {t("pages.settings.retentionDescription")}
                 {cfgQ.data?.updated_at
-                  ? ` Last updated ${formatDateTime(cfgQ.data.updated_at)}.`
+                  ? t("pages.settings.lastUpdated", {
+                      date: formatDateTime(cfgQ.data.updated_at),
+                    })
                   : ""}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex max-w-xs flex-col gap-2">
-                <Label htmlFor="retention-days">Retention (days)</Label>
+                <Label htmlFor="retention-days">{t("pages.settings.retentionDaysLabel")}</Label>
                 <Input
                   id="retention-days"
                   type="number"
@@ -120,23 +124,21 @@ function SettingsPage() {
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <div>
-                <CardTitle>Transforms & masking</CardTitle>
-                <CardDescription>
-                  Field → action applied by the synchronous PII gate before logs reach ClickHouse.
-                </CardDescription>
+                <CardTitle>{t("pages.settings.transformsTitle")}</CardTitle>
+                <CardDescription>{t("pages.settings.transformsDescription")}</CardDescription>
               </div>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setRows((r) => [...r, { field: "", action: "redact" }])}
               >
-                <PlusIcon /> Add rule
+                <PlusIcon /> {t("pages.settings.addRule")}
               </Button>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               {rows.length === 0 && (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  No masking rules. Add one to redact, hash, mask or drop a field.
+                  {t("pages.settings.noRules")}
                 </p>
               )}
               {rows.map((row, i) => (
@@ -144,7 +146,7 @@ function SettingsPage() {
                 <div key={i} className="flex items-center gap-2">
                   <Input
                     className="font-mono-logs"
-                    placeholder="field (e.g. email, ip, authorization)"
+                    placeholder={t("pages.settings.fieldPlaceholder")}
                     value={row.field}
                     onChange={(e) =>
                       setRows((prev) =>
@@ -174,7 +176,7 @@ function SettingsPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label="Remove rule"
+                    aria-label={t("pages.settings.removeRule")}
                     onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
                   >
                     <Trash2Icon className="text-destructive" />

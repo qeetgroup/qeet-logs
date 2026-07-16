@@ -28,6 +28,7 @@ import {
   ThumbsUpIcon,
 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { PageHeader } from "@/components/page-header";
 import type { Incident } from "@/lib/domain";
@@ -43,14 +44,15 @@ import {
 export const Route = createFileRoute("/_app/incidents")({ component: IncidentsPage });
 
 function IncidentsPage() {
+  const { t } = useTranslation();
   const incidentsQ = useIncidents();
   const [selected, setSelected] = useState<Incident | null>(null);
 
   return (
     <>
       <PageHeader
-        title="Incidents"
-        description="Correlated error clusters, root-cause analysis, deploy culprits and business impact."
+        title={t("pages.incidents.title")}
+        description={t("pages.incidents.description")}
       />
 
       <Card>
@@ -62,8 +64,8 @@ function IncidentsPage() {
             empty={
               <EmptyState
                 icon={FlameIcon}
-                title="No incidents"
-                description="Incident intelligence groups related errors into incidents. When one opens, it appears here with RCA and change correlation."
+                title={t("pages.incidents.emptyTitle")}
+                description={t("pages.incidents.emptyDescription")}
               />
             }
             skeletonRows={6}
@@ -84,7 +86,8 @@ function IncidentsPage() {
                         {inc.title ?? inc.summary ?? inc.id}
                       </div>
                       <div className="truncate text-xs text-muted-foreground">
-                        {inc.service ?? "unknown service"} · {formatNumber(inc.count ?? 0)} events ·{" "}
+                        {inc.service ?? t("pages.incidents.unknownService")} ·{" "}
+                        {t("pages.incidents.eventsCount", { count: inc.count ?? 0 })} ·{" "}
                         {relativeTime(inc.opened_at ?? inc.last_seen)}
                       </div>
                     </div>
@@ -103,6 +106,7 @@ function IncidentsPage() {
 }
 
 function IncidentSheet({ incident, onClose }: { incident: Incident | null; onClose: () => void }) {
+  const { t } = useTranslation();
   const feedback = useIncidentFeedback();
 
   return (
@@ -116,22 +120,27 @@ function IncidentSheet({ incident, onClose }: { incident: Incident | null; onClo
             <span className="truncate">{incident?.title ?? incident?.summary ?? incident?.id}</span>
           </SheetTitle>
           <SheetDescription>
-            {incident?.service ?? "unknown service"} · {formatNumber(incident?.count ?? 0)} events ·
-            opened {relativeTime(incident?.opened_at ?? incident?.first_seen)}
+            {incident?.service ?? t("pages.incidents.unknownService")} ·{" "}
+            {t("pages.incidents.eventsCount", { count: incident?.count ?? 0 })} ·{" "}
+            {t("pages.incidents.openedRelative", {
+              time: relativeTime(incident?.opened_at ?? incident?.first_seen),
+            })}
           </SheetDescription>
         </SheetHeader>
 
         {incident && (
           <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Was this actionable?</span>
+              <span className="text-xs text-muted-foreground">
+                {t("pages.incidents.actionablePrompt")}
+              </span>
               <Button
                 variant="outline"
                 size="sm"
                 disabled={feedback.isPending}
                 onClick={() => feedback.mutate({ id: incident.id, verdict: "actionable" })}
               >
-                <ThumbsUpIcon /> Actionable
+                <ThumbsUpIcon /> {t("pages.incidents.actionable")}
               </Button>
               <Button
                 variant="outline"
@@ -139,7 +148,7 @@ function IncidentSheet({ incident, onClose }: { incident: Incident | null; onClo
                 disabled={feedback.isPending}
                 onClick={() => feedback.mutate({ id: incident.id, verdict: "noise" })}
               >
-                <ThumbsDownIcon /> Noise
+                <ThumbsDownIcon /> {t("pages.incidents.noise")}
               </Button>
             </div>
 
@@ -148,13 +157,13 @@ function IncidentSheet({ incident, onClose }: { incident: Incident | null; onClo
             <Tabs defaultValue="rca">
               <TabsList>
                 <TabsTrigger value="rca">
-                  <BrainCircuitIcon className="size-4" /> RCA
+                  <BrainCircuitIcon className="size-4" /> {t("pages.incidents.tabRca")}
                 </TabsTrigger>
                 <TabsTrigger value="deploys">
-                  <GitCommitHorizontalIcon className="size-4" /> Deploys
+                  <GitCommitHorizontalIcon className="size-4" /> {t("pages.incidents.tabDeploys")}
                 </TabsTrigger>
                 <TabsTrigger value="business">
-                  <Building2Icon className="size-4" /> Business
+                  <Building2Icon className="size-4" /> {t("pages.incidents.tabBusiness")}
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="rca" className="pt-4">
@@ -175,6 +184,7 @@ function IncidentSheet({ incident, onClose }: { incident: Incident | null; onClo
 }
 
 function RcaPanel({ service }: { service?: string }) {
+  const { t } = useTranslation();
   const q = useRca(service);
   return (
     <DataState
@@ -183,8 +193,8 @@ function RcaPanel({ service }: { service?: string }) {
       error={q.error}
       isEmpty={!q.isLoading && !q.data}
       emptyIcon={BrainCircuitIcon}
-      emptyTitle="No RCA available"
-      emptyDescription="Root-cause analysis will appear once enough correlated signal is collected for this service."
+      emptyTitle={t("pages.incidents.rcaEmptyTitle")}
+      emptyDescription={t("pages.incidents.rcaEmptyDescription")}
       skeletonRows={4}
     >
       <div className="flex flex-col gap-4">
@@ -192,7 +202,9 @@ function RcaPanel({ service }: { service?: string }) {
         {typeof q.data?.confidence === "number" && (
           <div className="flex flex-col gap-1">
             <span className="text-xs text-muted-foreground">
-              Confidence {Math.round((q.data.confidence ?? 0) * 100)}%
+              {t("pages.incidents.confidence", {
+                percent: Math.round((q.data.confidence ?? 0) * 100),
+              })}
             </span>
             <Progress value={Math.round((q.data.confidence ?? 0) * 100)} />
           </div>
@@ -201,7 +213,9 @@ function RcaPanel({ service }: { service?: string }) {
           // biome-ignore lint/suspicious/noArrayIndexKey: hypotheses have no id
           <Card key={i}>
             <CardContent className="flex flex-col gap-1 pt-4">
-              <div className="text-sm font-medium">{h.title ?? `Hypothesis ${i + 1}`}</div>
+              <div className="text-sm font-medium">
+                {h.title ?? t("pages.incidents.hypothesis", { index: i + 1 })}
+              </div>
               {h.detail && <p className="text-xs text-muted-foreground">{h.detail}</p>}
             </CardContent>
           </Card>
@@ -212,6 +226,7 @@ function RcaPanel({ service }: { service?: string }) {
 }
 
 function DeployPanel({ service }: { service?: string }) {
+  const { t } = useTranslation();
   const q = useDeployCulprits(service);
   return (
     <DataState
@@ -220,8 +235,8 @@ function DeployPanel({ service }: { service?: string }) {
       error={q.error}
       isEmpty={!q.isLoading && (q.data?.length ?? 0) === 0}
       emptyIcon={GitCommitHorizontalIcon}
-      emptyTitle="No deploy culprits"
-      emptyDescription="Deploys around the incident window are ranked by how strongly they correlate with the error spike."
+      emptyTitle={t("pages.incidents.deploysEmptyTitle")}
+      emptyDescription={t("pages.incidents.deploysEmptyDescription")}
       skeletonRows={4}
     >
       <ul className="flex flex-col gap-2">
@@ -236,7 +251,7 @@ function DeployPanel({ service }: { service?: string }) {
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{c.version ?? c.deploy_id}</div>
               <div className="truncate text-xs text-muted-foreground">
-                {c.reason ?? "correlated with error spike"} · {relativeTime(c.deployed_at)}
+                {c.reason ?? t("pages.incidents.correlatedReason")} · {relativeTime(c.deployed_at)}
               </div>
             </div>
           </li>
@@ -247,6 +262,7 @@ function DeployPanel({ service }: { service?: string }) {
 }
 
 function BusinessPanel({ id }: { id: string }) {
+  const { t } = useTranslation();
   const q = useIncidentContext(id);
   const d = q.data;
   return (
@@ -256,18 +272,24 @@ function BusinessPanel({ id }: { id: string }) {
       error={q.error}
       isEmpty={!q.isLoading && !d}
       emptyIcon={Building2Icon}
-      emptyTitle="No business context"
-      emptyDescription="Business impact (affected customers, revenue, SLA) is joined from your business-context mappings."
+      emptyTitle={t("pages.incidents.businessEmptyTitle")}
+      emptyDescription={t("pages.incidents.businessEmptyDescription")}
       skeletonRows={4}
     >
       <div className="grid grid-cols-2 gap-3">
-        <Metric label="Affected customers" value={formatNumber(d?.affected_customers ?? 0)} />
         <Metric
-          label="Revenue at risk"
+          label={t("pages.incidents.affectedCustomers")}
+          value={formatNumber(d?.affected_customers ?? 0)}
+        />
+        <Metric
+          label={t("pages.incidents.revenueAtRisk")}
           value={`${d?.currency ?? "$"}${formatNumber(d?.affected_revenue ?? 0)}`}
         />
-        <Metric label="Tier" value={d?.tier ?? "—"} />
-        <Metric label="SLA breach" value={d?.sla_breach ? "Yes" : "No"} />
+        <Metric label={t("fields.tier")} value={d?.tier ?? "—"} />
+        <Metric
+          label={t("pages.incidents.slaBreach")}
+          value={d?.sla_breach ? t("pages.incidents.yes") : t("pages.incidents.no")}
+        />
       </div>
       {d?.summary && <p className="mt-3 text-sm text-muted-foreground">{d.summary}</p>}
     </DataState>

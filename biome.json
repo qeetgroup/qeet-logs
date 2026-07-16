@@ -54,7 +54,8 @@
       "!.claude",
       "!api/postman",
       "!api/openapi",
-      "!sdk"
+      "!sdk",
+      "!test/load"
     ]
   }
 }

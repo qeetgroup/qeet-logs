@@ -26,6 +26,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2Icon, PlusIcon, Trash2Icon, WebhookIcon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
@@ -52,6 +53,7 @@ function asList(data: unknown): Webhook[] {
 }
 
 function WebhooksPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [dialog, confirm] = useConfirmDialog();
   const [open, setOpen] = useState(false);
@@ -74,13 +76,13 @@ function WebhooksPage() {
       setUrl("");
       setEvents(new Set(["incident.opened"]));
     },
-    meta: { successMessage: "Webhook created" },
+    meta: { successMessage: t("pages.webhooks.createdToast") },
   });
 
   const remove = useMutation({
     mutationFn: (id: string) => api(`/v1/admin/webhooks/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["webhooks"] }),
-    meta: { successMessage: "Webhook deleted" },
+    meta: { successMessage: t("pages.webhooks.deletedToast") },
   });
 
   function toggleEvent(e: string) {
@@ -97,11 +99,11 @@ function WebhooksPage() {
   return (
     <>
       <PageHeader
-        title="Webhooks"
-        description="Deliver incident, alert and deploy events to your own endpoints (Slack relays, PagerDuty, custom)."
+        title={t("pages.webhooks.title")}
+        description={t("pages.webhooks.description")}
         actions={
           <Button onClick={() => setOpen(true)}>
-            <PlusIcon /> New webhook
+            <PlusIcon /> {t("pages.webhooks.newWebhook")}
           </Button>
         }
       />
@@ -115,11 +117,11 @@ function WebhooksPage() {
             empty={
               <EmptyState
                 icon={WebhookIcon}
-                title="No webhooks"
-                description="Register an endpoint to receive Qeet Logs events as signed JSON payloads."
+                title={t("pages.webhooks.emptyTitle")}
+                description={t("pages.webhooks.emptyDescription")}
                 action={
                   <Button onClick={() => setOpen(true)}>
-                    <PlusIcon /> New webhook
+                    <PlusIcon /> {t("pages.webhooks.newWebhook")}
                   </Button>
                 }
               />
@@ -129,10 +131,10 @@ function WebhooksPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Endpoint</TableHead>
-                  <TableHead>Events</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
+                  <TableHead>{t("columns.endpoint")}</TableHead>
+                  <TableHead>{t("columns.events")}</TableHead>
+                  <TableHead>{t("columns.status")}</TableHead>
+                  <TableHead>{t("columns.created")}</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
@@ -153,7 +155,9 @@ function WebhooksPage() {
                     </TableCell>
                     <TableCell>
                       <StatusPill kind={w.enabled === false ? "muted" : "success"}>
-                        {w.enabled === false ? "Disabled" : "Active"}
+                        {w.enabled === false
+                          ? t("pages.webhooks.disabled")
+                          : t("pages.webhooks.active")}
                       </StatusPill>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
@@ -163,12 +167,12 @@ function WebhooksPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label="Delete webhook"
+                        aria-label={t("pages.webhooks.deleteAria")}
                         onClick={() =>
                           confirm({
-                            title: "Delete webhook?",
+                            title: t("pages.webhooks.deleteTitle"),
                             description: w.url,
-                            confirmLabel: "Delete",
+                            confirmLabel: t("actions.delete"),
                             onConfirm: () => remove.mutate(w.id),
                           })
                         }
@@ -187,24 +191,22 @@ function WebhooksPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New webhook</DialogTitle>
-            <DialogDescription>
-              We POST a signed JSON payload to this URL for each subscribed event.
-            </DialogDescription>
+            <DialogTitle>{t("pages.webhooks.createTitle")}</DialogTitle>
+            <DialogDescription>{t("pages.webhooks.createDescription")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="wh-url">Endpoint URL</Label>
+              <Label htmlFor="wh-url">{t("pages.webhooks.endpointUrl")}</Label>
               <Input
                 id="wh-url"
                 className="font-mono-logs"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://hooks.example.com/qeet-logs"
+                placeholder={t("pages.webhooks.urlPlaceholder")}
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Events</Label>
+              <Label>{t("fields.events")}</Label>
               <div className="flex flex-wrap gap-2">
                 {EVENTS.map((e) => {
                   const on = events.has(e);
@@ -225,13 +227,13 @@ function WebhooksPage() {
             </div>
           </div>
           <DialogFooter>
-            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <DialogClose render={<Button variant="outline">{t("actions.cancel")}</Button>} />
             <Button
               onClick={() => create.mutate({ url: url.trim(), events: [...events] })}
               disabled={!url.trim() || events.size === 0 || create.isPending}
             >
               {create.isPending && <Loader2Icon className="animate-spin" />}
-              Create
+              {t("actions.create")}
             </Button>
           </DialogFooter>
         </DialogContent>

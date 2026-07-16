@@ -13,6 +13,7 @@ import {
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { KeyRoundIcon, Loader2Icon, ScrollTextIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 
 import { isAuthenticated, useSignIn } from "@/lib/auth";
 
@@ -20,6 +21,7 @@ export const Route = createFileRoute("/sign-in")({ component: SignInPage });
 
 function SignInPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [key, setKey] = useState("");
   const signIn = useSignIn();
 
@@ -33,14 +35,14 @@ function SignInPage() {
         <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <ScrollTextIcon className="size-4" />
         </span>
-        Qeet Logs
+        {t("app.name")}
       </div>
 
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Sign in</CardTitle>
+          <CardTitle>{t("signIn.title")}</CardTitle>
           <CardDescription>
-            Paste a Qeet Logs API key with the <code>logs:admin</code> scope to open the console.
+            <Trans i18nKey="signIn.description" components={{ code: <code /> }} />
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -52,7 +54,7 @@ function SignInPage() {
             }}
           >
             <div className="flex flex-col gap-2">
-              <Label htmlFor="api-key">API key</Label>
+              <Label htmlFor="api-key">{t("signIn.apiKeyLabel")}</Label>
               <div className="relative">
                 <KeyRoundIcon className="pointer-events-none absolute inset-s-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -71,24 +73,21 @@ function SignInPage() {
             {signIn.isError && (
               <Alert variant="danger">
                 <AlertDescription>
-                  {signIn.error instanceof Error
-                    ? signIn.error.message
-                    : "That API key could not be verified."}
+                  {signIn.error instanceof Error ? signIn.error.message : t("signIn.rejected")}
                 </AlertDescription>
               </Alert>
             )}
 
             <Button type="submit" disabled={!key.trim() || signIn.isPending} className="w-full">
               {signIn.isPending && <Loader2Icon className="animate-spin" />}
-              {signIn.isPending ? "Verifying…" : "Continue"}
+              {signIn.isPending ? t("signIn.verifying") : t("signIn.continue")}
             </Button>
           </form>
         </CardContent>
       </Card>
 
       <p className="max-w-sm text-center text-xs text-muted-foreground">
-        Keys are stored in this browser only and sent as the <code>X-Qeet-Api-Key</code> header.
-        Mint one with <code>POST /v1/admin/api-keys</code> or the seed script.
+        <Trans i18nKey="signIn.footer" components={{ code: <code /> }} />
       </p>
     </div>
   );

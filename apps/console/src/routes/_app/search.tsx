@@ -20,12 +20,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { BookmarkPlusIcon, DownloadIcon, Loader2Icon, PlayIcon } from "lucide-react";
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { z } from "zod";
 
 import { PageHeader } from "@/components/page-header";
 import { ResultsTable } from "@/components/results-table";
 import { api } from "@/lib/api";
-import { downloadText, formatNumber, toCSV } from "@/lib/format";
+import { downloadText, toCSV } from "@/lib/format";
 import { useLogQuery } from "@/lib/query";
 
 const searchSchema = z.object({ q: z.string().optional() });
@@ -38,6 +39,7 @@ export const Route = createFileRoute("/_app/search")({
 const SAMPLE = 'SELECT timestamp, service, level, body FROM logs WHERE level = "error" LIMIT 100';
 
 function SearchPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const initial = Route.useSearch().q;
   const [draft, setDraft] = useState(initial ?? SAMPLE);
@@ -55,7 +57,7 @@ function SearchPage() {
       setSaveOpen(false);
       setSaveName("");
     },
-    meta: { successMessage: "Search saved" },
+    meta: { successMessage: t("pages.search.savedToast") },
   });
 
   function run() {
@@ -78,8 +80,8 @@ function SearchPage() {
   return (
     <>
       <PageHeader
-        title="Log Search"
-        description="Run LogQL++ against ClickHouse for the current tenant. Cmd/Ctrl+Enter to execute."
+        title={t("pages.search.title")}
+        description={t("pages.search.description")}
         actions={
           <>
             <Button
@@ -87,14 +89,14 @@ function SearchPage() {
               onClick={() => exportAs("csv")}
               disabled={!result.data || result.data.rows.length === 0}
             >
-              <DownloadIcon /> Export CSV
+              <DownloadIcon /> {t("pages.search.exportCsv")}
             </Button>
             <Button
               variant="outline"
               onClick={() => setSaveOpen(true)}
               disabled={draft.trim().length === 0}
             >
-              <BookmarkPlusIcon /> Save
+              <BookmarkPlusIcon /> {t("pages.search.save")}
             </Button>
           </>
         }
@@ -102,7 +104,7 @@ function SearchPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Query</CardTitle>
+          <CardTitle className="text-sm">{t("pages.search.queryLabel")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <Textarea
@@ -110,7 +112,7 @@ function SearchPage() {
             spellCheck={false}
             rows={4}
             className="font-mono-logs text-sm"
-            aria-label="LogQL++ query"
+            aria-label={t("pages.search.queryAria")}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -121,11 +123,11 @@ function SearchPage() {
           />
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
-              Press <Kbd>⌘</Kbd> <Kbd>↵</Kbd> to run. TAIL queries stream from the Live Tail page.
+              <Trans i18nKey="pages.search.runHint" components={{ kbd: <Kbd /> }} />
             </p>
             <Button onClick={run} disabled={draft.trim().length === 0 || result.isFetching}>
               {result.isFetching ? <Loader2Icon className="animate-spin" /> : <PlayIcon />}
-              Run
+              {t("actions.run")}
             </Button>
           </div>
         </CardContent>
@@ -134,10 +136,10 @@ function SearchPage() {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-sm">
-            Results
+            {t("pages.search.results")}
             {result.data ? (
               <span className="ms-2 text-xs font-normal text-muted-foreground">
-                {formatNumber(result.data.count)} rows
+                {t("pages.search.rowsCount", { count: result.data.count })}
               </span>
             ) : null}
           </CardTitle>
@@ -150,7 +152,7 @@ function SearchPage() {
         <CardContent>
           {submitted.trim().length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
-              Enter a query above and press Run to see results.
+              {t("pages.search.prompt")}
             </p>
           ) : (
             <ResultsTable
@@ -166,31 +168,29 @@ function SearchPage() {
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Save search</DialogTitle>
-            <DialogDescription>
-              Store this LogQL++ statement so the team can re-run it from Saved Searches.
-            </DialogDescription>
+            <DialogTitle>{t("pages.search.saveTitle")}</DialogTitle>
+            <DialogDescription>{t("pages.search.saveDescription")}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="save-name">Name</Label>
+              <Label htmlFor="save-name">{t("fields.name")}</Label>
               <Input
                 id="save-name"
                 value={saveName}
                 onChange={(e) => setSaveName(e.target.value)}
-                placeholder="Errors in checkout (last hour)"
+                placeholder={t("pages.search.saveNamePlaceholder")}
               />
             </div>
             <Textarea readOnly value={draft} rows={3} className="font-mono-logs text-xs" />
           </div>
           <DialogFooter>
-            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <DialogClose render={<Button variant="outline">{t("actions.cancel")}</Button>} />
             <Button
               onClick={() => saveSearch.mutate({ name: saveName.trim(), query_text: draft })}
               disabled={!saveName.trim() || saveSearch.isPending}
             >
               {saveSearch.isPending && <Loader2Icon className="animate-spin" />}
-              Save
+              {t("actions.save")}
             </Button>
           </DialogFooter>
         </DialogContent>

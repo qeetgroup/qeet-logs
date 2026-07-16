@@ -20,64 +20,70 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+// Nav labels are stored as i18n keys (`titleKey` / `labelKey`) and resolved
+// with `t()` at render time by the sidebar, breadcrumb and page header — so a
+// single translation source drives every place a title appears.
 export type NavItem = {
-  title: string;
+  titleKey: string;
   url: string;
   icon?: ReactNode;
   isActive?: boolean;
-  items?: { title: string; url: string }[];
+  items?: { titleKey: string; url: string }[];
 };
 
 export type NavGroup = {
-  label: string;
+  labelKey: string;
   items: NavItem[];
 };
 
 export const navGroups: NavGroup[] = [
   {
-    label: "Monitor",
+    labelKey: "nav.groups.monitor",
     items: [
-      { title: "Overview", url: "/", icon: <LayoutDashboardIcon />, isActive: true },
-      { title: "Live Tail", url: "/tail", icon: <RadioIcon /> },
-      { title: "Service Topology", url: "/topology", icon: <NetworkIcon /> },
-      { title: "Timeline", url: "/timeline", icon: <HistoryIcon /> },
-      { title: "Dashboards", url: "/dashboards", icon: <LayoutPanelLeftIcon /> },
+      { titleKey: "nav.items.overview", url: "/", icon: <LayoutDashboardIcon />, isActive: true },
+      { titleKey: "nav.items.tail", url: "/tail", icon: <RadioIcon /> },
+      { titleKey: "nav.items.topology", url: "/topology", icon: <NetworkIcon /> },
+      { titleKey: "nav.items.timeline", url: "/timeline", icon: <HistoryIcon /> },
+      { titleKey: "nav.items.dashboards", url: "/dashboards", icon: <LayoutPanelLeftIcon /> },
     ],
   },
   {
-    label: "Investigate",
+    labelKey: "nav.groups.investigate",
     items: [
-      { title: "Log Search", url: "/search", icon: <ListFilterIcon /> },
-      { title: "Incidents", url: "/incidents", icon: <FlameIcon /> },
-      { title: "Changes", url: "/changes", icon: <GitBranchIcon /> },
-      { title: "Analytics", url: "/analytics", icon: <ChartColumnIcon /> },
-      { title: "Saved Searches", url: "/saved-searches", icon: <BookmarkIcon /> },
-      { title: "Audit Log", url: "/audit", icon: <ScrollTextIcon /> },
+      { titleKey: "nav.items.search", url: "/search", icon: <ListFilterIcon /> },
+      { titleKey: "nav.items.incidents", url: "/incidents", icon: <FlameIcon /> },
+      { titleKey: "nav.items.changes", url: "/changes", icon: <GitBranchIcon /> },
+      { titleKey: "nav.items.analytics", url: "/analytics", icon: <ChartColumnIcon /> },
+      { titleKey: "nav.items.savedSearches", url: "/saved-searches", icon: <BookmarkIcon /> },
+      { titleKey: "nav.items.audit", url: "/audit", icon: <ScrollTextIcon /> },
     ],
   },
   {
-    label: "Respond",
+    labelKey: "nav.groups.respond",
     items: [
-      { title: "Alert Rules", url: "/alerts", icon: <BellRingIcon /> },
-      { title: "Postmortems", url: "/postmortems", icon: <FileTextIcon /> },
-      { title: "Business Context", url: "/business-context", icon: <Building2Icon /> },
+      { titleKey: "nav.items.alerts", url: "/alerts", icon: <BellRingIcon /> },
+      { titleKey: "nav.items.postmortems", url: "/postmortems", icon: <FileTextIcon /> },
+      { titleKey: "nav.items.businessContext", url: "/business-context", icon: <Building2Icon /> },
     ],
   },
   {
-    label: "Configure",
+    labelKey: "nav.groups.configure",
     items: [
-      { title: "API Keys", url: "/api-keys", icon: <KeyRoundIcon /> },
-      { title: "Webhooks", url: "/webhooks", icon: <WebhookIcon /> },
-      { title: "Export", url: "/export", icon: <DownloadIcon /> },
-      { title: "Settings", url: "/settings", icon: <Settings2Icon /> },
+      { titleKey: "nav.items.apiKeys", url: "/api-keys", icon: <KeyRoundIcon /> },
+      { titleKey: "nav.items.webhooks", url: "/webhooks", icon: <WebhookIcon /> },
+      { titleKey: "nav.items.export", url: "/export", icon: <DownloadIcon /> },
+      { titleKey: "nav.items.settings", url: "/settings", icon: <Settings2Icon /> },
     ],
   },
 ];
 
 export type NavTitleLookup = {
-  group?: string;
-  parent?: { title: string; url: string };
-  title: string;
+  groupKey?: string;
+  parent?: { titleKey: string; url: string };
+  /** Resolved i18n key for known nav entries. */
+  titleKey?: string;
+  /** Literal fallback title (Title-cased slug) for paths not in the nav tree. */
+  title?: string;
 };
 
 function titleFromSlug(slug: string): string {
@@ -91,14 +97,14 @@ export function lookupNavTitle(pathname: string): NavTitleLookup {
   for (const group of navGroups) {
     for (const item of group.items) {
       if (item.url === pathname) {
-        return { group: group.label, title: item.title };
+        return { groupKey: group.labelKey, titleKey: item.titleKey };
       }
       const sub = item.items?.find((s) => s.url === pathname);
       if (sub) {
         return {
-          group: group.label,
-          parent: { title: item.title, url: item.url },
-          title: sub.title,
+          groupKey: group.labelKey,
+          parent: { titleKey: item.titleKey, url: item.url },
+          titleKey: sub.titleKey,
         };
       }
     }

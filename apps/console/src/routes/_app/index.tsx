@@ -25,6 +25,7 @@ import {
   GitBranchIcon,
   HardDriveIcon,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
 
 import { PageHeader } from "@/components/page-header";
@@ -67,6 +68,7 @@ function bucketByHour(entries: AuditEntry[]): Array<{ hour: string; events: numb
 }
 
 function OverviewPage() {
+  const { t } = useTranslation();
   const quotaQ = useQuery({
     queryKey: ["quota"],
     queryFn: () => api<Quota>("/v1/admin/quota/usage"),
@@ -88,35 +90,36 @@ function OverviewPage() {
 
   return (
     <>
-      <PageHeader
-        title="Overview"
-        description="Ingest health, query activity, open incidents and the changes that may have caused them."
-      />
+      <PageHeader title={t("pages.overview.title")} description={t("pages.overview.description")} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
-          label="Events this period"
+          label={t("pages.overview.eventsLabel")}
           value={formatNumber(quotaQ.data?.events ?? 0)}
           icon={ActivityIcon}
-          hint="Current billing month"
+          hint={t("pages.overview.eventsHint")}
         />
         <Stat
-          label="Stored"
+          label={t("pages.overview.storedLabel")}
           value={formatBytes(quotaQ.data?.bytes_stored ?? 0)}
           icon={HardDriveIcon}
-          hint="Compressed log body"
+          hint={t("pages.overview.storedHint")}
         />
         <Stat
-          label="Retention"
-          value={`${quotaQ.data?.retention_days ?? "—"} days`}
+          label={t("pages.overview.retentionLabel")}
+          value={
+            quotaQ.data?.retention_days != null
+              ? t("pages.overview.retentionValue", { count: quotaQ.data.retention_days })
+              : "—"
+          }
           icon={DatabaseIcon}
-          hint="Tenant policy"
+          hint={t("pages.overview.retentionHint")}
         />
         <Stat
-          label="Open incidents"
+          label={t("pages.overview.openIncidentsLabel")}
           value={formatNumber(incidentsQ.data?.length ?? 0)}
           icon={FlameIcon}
-          hint="Awaiting triage"
+          hint={t("pages.overview.openIncidentsHint")}
         />
       </div>
 
@@ -124,11 +127,9 @@ function OverviewPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <GaugeIcon className="size-4 text-muted-foreground" />
-            Query activity — last 24h
+            {t("pages.overview.activityTitle")}
           </CardTitle>
-          <CardDescription>
-            Queries recorded in the tamper-evident audit log, by hour.
-          </CardDescription>
+          <CardDescription>{t("pages.overview.activityDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
           <DataState
@@ -137,8 +138,8 @@ function OverviewPage() {
             error={auditQ.error}
             isEmpty={!auditQ.isLoading && (auditQ.data?.entries.length ?? 0) === 0}
             emptyIcon={GaugeIcon}
-            emptyTitle="No recorded activity"
-            emptyDescription="Run a query from Log Search to populate the audit trail."
+            emptyTitle={t("pages.overview.activityEmptyTitle")}
+            emptyDescription={t("pages.overview.activityEmptyDescription")}
             skeletonRows={4}
           >
             <ChartContainer config={activityConfig} className="aspect-auto h-56 w-full">
@@ -172,9 +173,9 @@ function OverviewPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FlameIcon className="size-4 text-muted-foreground" />
-              Open incidents
+              {t("pages.overview.incidentsTitle")}
             </CardTitle>
-            <CardDescription>Correlated error clusters awaiting triage.</CardDescription>
+            <CardDescription>{t("pages.overview.incidentsDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <DataState
@@ -184,8 +185,8 @@ function OverviewPage() {
               empty={
                 <EmptyState
                   icon={FlameIcon}
-                  title="No open incidents"
-                  description="Incident intelligence correlates errors into incidents as they arrive."
+                  title={t("pages.overview.incidentsEmptyTitle")}
+                  description={t("pages.overview.incidentsEmptyDescription")}
                 />
               }
               skeletonRows={4}
@@ -205,7 +206,7 @@ function OverviewPage() {
                           {inc.title ?? inc.summary ?? inc.id}
                         </div>
                         <div className="truncate text-xs text-muted-foreground">
-                          {inc.service ?? "unknown service"} ·{" "}
+                          {inc.service ?? t("pages.incidents.unknownService")} ·{" "}
                           {relativeTime(inc.opened_at ?? inc.last_seen)}
                         </div>
                       </div>
@@ -222,9 +223,9 @@ function OverviewPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <GitBranchIcon className="size-4 text-muted-foreground" />
-              Recent changes
+              {t("pages.overview.changesTitle")}
             </CardTitle>
-            <CardDescription>Deploys and config changes overlaid on your logs.</CardDescription>
+            <CardDescription>{t("pages.overview.changesDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <DataState
@@ -234,8 +235,8 @@ function OverviewPage() {
               empty={
                 <EmptyState
                   icon={GitBranchIcon}
-                  title="No recent changes"
-                  description="Connect a deploy source to see change markers on incidents and charts."
+                  title={t("pages.overview.changesEmptyTitle")}
+                  description={t("pages.overview.changesEmptyDescription")}
                 />
               }
               skeletonRows={4}
@@ -260,7 +261,7 @@ function OverviewPage() {
             </DataState>
             <div className="border-t p-3">
               <Button variant="outline" size="sm" render={<Link to="/changes" />}>
-                View all changes
+                {t("pages.overview.viewAllChanges")}
               </Button>
             </div>
           </CardContent>

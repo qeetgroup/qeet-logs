@@ -13,6 +13,7 @@ import {
 } from "@qeetrix/ui";
 import { createFileRoute } from "@tanstack/react-router";
 import { GitBranchIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { PageHeader } from "@/components/page-header";
 import { formatDateTime, relativeTime } from "@/lib/format";
@@ -35,15 +36,13 @@ function kindVariant(kind: string | undefined): "success" | "warning" | "seconda
 }
 
 function ChangesPage() {
+  const { t } = useTranslation();
   const q = useChanges();
   const changes = q.data ?? [];
 
   return (
     <>
-      <PageHeader
-        title="Changes"
-        description="Every deploy, config edit and feature-flag flip — the change stream correlated against your incidents."
-      />
+      <PageHeader title={t("pages.changes.title")} description={t("pages.changes.description")} />
 
       <Card>
         <CardContent className="p-0">
@@ -54,8 +53,8 @@ function ChangesPage() {
             empty={
               <EmptyState
                 icon={GitBranchIcon}
-                title="No changes recorded"
-                description="Wire a deploy webhook or CI hook to stream change markers into Qeet Logs."
+                title={t("pages.changes.emptyTitle")}
+                description={t("pages.changes.emptyDescription")}
               />
             }
             skeletonRows={6}
@@ -63,11 +62,11 @@ function ChangesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Change</TableHead>
-                  <TableHead>Service</TableHead>
-                  <TableHead>Actor</TableHead>
-                  <TableHead className="text-right">When</TableHead>
+                  <TableHead>{t("columns.type")}</TableHead>
+                  <TableHead>{t("columns.change")}</TableHead>
+                  <TableHead>{t("columns.service")}</TableHead>
+                  <TableHead>{t("columns.actor")}</TableHead>
+                  <TableHead className="text-right">{t("columns.when")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

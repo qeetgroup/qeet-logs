@@ -31,6 +31,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { BellRingIcon, Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { PageHeader } from "@/components/page-header";
@@ -63,6 +64,7 @@ type NewRule = {
 };
 
 function AlertsPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [dialog, confirm] = useConfirmDialog();
   const [open, setOpen] = useState(false);
@@ -100,13 +102,13 @@ function AlertsPage() {
       });
       setChannelsText("");
     },
-    meta: { successMessage: "Alert rule created" },
+    meta: { successMessage: t("pages.alerts.createdToast") },
   });
 
   const deleteRule = useMutation({
     mutationFn: (id: string) => api(`/v1/admin/alert-rules/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["alert-rules"] }),
-    meta: { successMessage: "Alert rule deleted" },
+    meta: { successMessage: t("pages.alerts.deletedToast") },
   });
 
   function submit() {
@@ -127,11 +129,11 @@ function AlertsPage() {
   return (
     <>
       <PageHeader
-        title="Alert Rules"
-        description="Threshold and absence rules evaluated by the alerter engine; matches notify the configured channels."
+        title={t("pages.alerts.title")}
+        description={t("pages.alerts.description")}
         actions={
           <Button onClick={() => setOpen(true)}>
-            <PlusIcon /> New rule
+            <PlusIcon /> {t("pages.alerts.newRule")}
           </Button>
         }
       />
@@ -146,11 +148,11 @@ function AlertsPage() {
             empty={
               <EmptyState
                 icon={BellRingIcon}
-                title="No alert rules"
-                description="Create a threshold or absence rule to get notified when your logs cross a limit."
+                title={t("pages.alerts.emptyTitle")}
+                description={t("pages.alerts.emptyDescription")}
                 action={
                   <Button onClick={() => setOpen(true)}>
-                    <PlusIcon /> New rule
+                    <PlusIcon /> {t("pages.alerts.newRule")}
                   </Button>
                 }
               />
@@ -160,12 +162,12 @@ function AlertsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Kind</TableHead>
-                  <TableHead>Service</TableHead>
-                  <TableHead>Window</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
+                  <TableHead>{t("columns.name")}</TableHead>
+                  <TableHead>{t("columns.kind")}</TableHead>
+                  <TableHead>{t("columns.service")}</TableHead>
+                  <TableHead>{t("columns.window")}</TableHead>
+                  <TableHead>{t("columns.status")}</TableHead>
+                  <TableHead>{t("columns.created")}</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
@@ -176,11 +178,13 @@ function AlertsPage() {
                     <TableCell>
                       <Badge variant="outline">{r.kind}</Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{r.service ?? "all"}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {r.service ?? t("pages.alerts.allServices")}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{r.window_seconds}s</TableCell>
                     <TableCell>
                       <StatusPill kind={r.enabled ? "success" : "muted"}>
-                        {r.enabled ? "Enabled" : "Disabled"}
+                        {r.enabled ? t("pages.alerts.enabled") : t("pages.alerts.disabled")}
                       </StatusPill>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
@@ -190,12 +194,12 @@ function AlertsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={`Delete ${r.name}`}
+                        aria-label={t("pages.alerts.deleteAria", { name: r.name })}
                         onClick={() =>
                           confirm({
-                            title: `Delete "${r.name}"?`,
-                            description: "This alert rule will stop evaluating immediately.",
-                            confirmLabel: "Delete",
+                            title: t("pages.alerts.deleteTitle", { name: r.name }),
+                            description: t("pages.alerts.deleteDescription"),
+                            confirmLabel: t("actions.delete"),
                             onConfirm: () => deleteRule.mutate(r.id),
                           })
                         }
@@ -214,25 +218,22 @@ function AlertsPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New alert rule</DialogTitle>
-            <DialogDescription>
-              Threshold rules fire when a count crosses a limit; absence rules fire when expected
-              logs stop arriving.
-            </DialogDescription>
+            <DialogTitle>{t("pages.alerts.createTitle")}</DialogTitle>
+            <DialogDescription>{t("pages.alerts.createDescription")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="rule-name">Name</Label>
+              <Label htmlFor="rule-name">{t("fields.name")}</Label>
               <Input
                 id="rule-name"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="High 5xx rate on checkout"
+                placeholder={t("pages.alerts.namePlaceholder")}
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-2">
-                <Label>Kind</Label>
+                <Label>{t("columns.kind")}</Label>
                 <Select
                   value={form.kind}
                   onValueChange={(v) => setForm((f) => ({ ...f, kind: v as NewRule["kind"] }))}
@@ -241,13 +242,13 @@ function AlertsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="threshold">Threshold</SelectItem>
-                    <SelectItem value="absence">Absence</SelectItem>
+                    <SelectItem value="threshold">{t("pages.alerts.kindThreshold")}</SelectItem>
+                    <SelectItem value="absence">{t("pages.alerts.kindAbsence")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="rule-service">Service (optional)</Label>
+                <Label htmlFor="rule-service">{t("pages.alerts.serviceOptional")}</Label>
                 <Input
                   id="rule-service"
                   value={form.service}
@@ -257,7 +258,7 @@ function AlertsPage() {
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="rule-condition">Condition</Label>
+              <Label htmlFor="rule-condition">{t("pages.alerts.condition")}</Label>
               <Input
                 id="rule-condition"
                 className="font-mono-logs"
@@ -268,7 +269,7 @@ function AlertsPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="rule-threshold">Threshold</Label>
+                <Label htmlFor="rule-threshold">{t("pages.alerts.threshold")}</Label>
                 <Input
                   id="rule-threshold"
                   type="number"
@@ -279,7 +280,7 @@ function AlertsPage() {
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="rule-window">Window (seconds)</Label>
+                <Label htmlFor="rule-window">{t("pages.alerts.windowSeconds")}</Label>
                 <Input
                   id="rule-window"
                   type="number"
@@ -291,7 +292,7 @@ function AlertsPage() {
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="rule-channels">Channels (comma-separated)</Label>
+              <Label htmlFor="rule-channels">{t("pages.alerts.channels")}</Label>
               <Input
                 id="rule-channels"
                 value={channelsText}
@@ -301,10 +302,10 @@ function AlertsPage() {
             </div>
           </div>
           <DialogFooter>
-            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <DialogClose render={<Button variant="outline">{t("actions.cancel")}</Button>} />
             <Button onClick={submit} disabled={!form.name.trim() || createRule.isPending}>
               {createRule.isPending && <Loader2Icon className="animate-spin" />}
-              Create rule
+              {t("pages.alerts.createRule")}
             </Button>
           </DialogFooter>
         </DialogContent>
