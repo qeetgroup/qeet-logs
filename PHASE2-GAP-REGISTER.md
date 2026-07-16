@@ -123,3 +123,22 @@ Only these remainders are genuinely gated — they need infrastructure/products 
 Each gated item is documented in-code where its substrate lives; each shipped-but-infra-dependent slice (cold-tier, Slack, Qeet Notify, copilot) returns a clear 501/error when its infra/secret is absent rather than fabricating success.
 
 **Frontend** (console): ✅ rebuilt from scratch on **bun** (root workspace + `apps/console`), mirroring the qeet-id console — @qeetrix/ui + TanStack Start + Biome, app shell (sidebar/header/nav/theme/i18n/tanstack-query) + 21 route pages covering Phase-1 + Phase-2 (overview, search, live-tail, incidents w/ RCA+deploy-culprits+business-context+feedback, topology, timeline, changes, alerts, api-keys, settings, business-context, postmortems, webhooks, dashboards, export, analytics, saved-searches, audit, sign-in). `bun install` + typecheck + SSR build + biome all green on develop.
+
+---
+
+## GA hardening round (product-readiness)
+
+Beyond features, a product-readiness pass landed the operational/quality/security layer that makes the platform deployable:
+
+| Workstream | What shipped |
+|---|---|
+| **Release engineering** | GitHub Actions `ci.yml` (Go vet/race-test/build · bun typecheck/build/biome · Rust build/clippy · migration up→down→up reversibility) + `security.yml` (govulncheck/gosec/CodeQL/bun-audit/Trivy) + `release.yml` (tag `v*` → multi-arch GHCR images + SBOM + provenance). Multi-stage distroless Dockerfiles (query/alerter/lifecycle/mcp/ingest) + `docker-compose.prod.yml` (18 services). |
+| **Observability** | Prometheus `/metrics` (RED metrics: `qeet_logs_http_requests_total`, `request_duration_seconds`, `requests_in_flight`) via a route-pattern-labelled chi middleware (WS-hijack-safe) + Go runtime/process collectors. |
+| **Security hardening** | Per-tenant Redis rate limiting (`RATE_LIMIT_PER_MINUTE`, fail-open, `X-RateLimit-*`/`Retry-After`) on `/v1`·`/api/v1`·`/loki`; OWASP secure-headers + 4 MiB body cap globally; AES-256-GCM envelope encryption (`QEET_LOGS_SECRETS_KEY`) for the Slack `bot_token` at rest. |
+| **Testing** | Tag-gated integration suite (`//go:build integration`): health, auth+scope, **cross-tenant isolation invariant**, query JSON/CSV/NDJSON + live-tail WS, admin CRUD; k6 load scripts. `cmd/seed` (two demo tenants + keys + sample logs) fixes `make seed`. |
+| **Docs / ops** | Reconciled README, SECURITY.md, 6 runbooks (incident/on-call/backup/scaling/rollback/DR), SLO/deploy/observability/privacy guides, and the AS-BUILT ground-truth file. |
+| **Console** | Error boundaries + branded ErrorState, a11y (landmarks/aria-sort/aria-current), i18n (366 keys), vitest (43 tests). |
+
+**GA-ready now:** the ingest → store → query → alert → correlate → RCA → postmortem core, multi-tenant isolation (RLS + identity-injected predicates), the query surfaces (LogQL++/PromQL/Loki), DPDP erasure, CI/CD, containers, Helm, metrics, rate limiting, and secrets-at-rest.
+
+**Still needs real infra/external products for full GA** (code ships; returns clear 501/error until then): trained ONNX/L2R models (need a labeled corpus), Qeet Pay charging/GST, Teams inbound ChatOps, and live ClickHouse-cluster/MinIO + registered Slack secrets to exercise cold-tier + two-way ChatOps end-to-end. End-to-end integration tests require `make infra-up` (can't run in-sandbox).
