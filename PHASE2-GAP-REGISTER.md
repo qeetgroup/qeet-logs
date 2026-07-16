@@ -88,4 +88,23 @@ E: P2-G13..G17                 dashboards / cost / DX (parallel)
 
 ## Progress
 
-**P2-G1 · Deployment Intelligence GA** 🚧 — see below as it lands.
+Shipped on `develop` (Go build/vet/test green across all domains; ClickHouse/Postgres-backed paths compile against the real schema and defer end-to-end to `make infra-up`, per the Phase-1 convention):
+
+| Gap | Module(s) | Status | What landed |
+|---|---|---|---|
+| **P2-G1** | 15.2–15.4 | ✅ | `domains/deploy` ranked culprit scoring + health delta + rollback; `GET /v1/deploy/culprits` |
+| **P2-G3** | 30.4/31.3/31.4 | ✅ | `domains/changesource` GitHub/GitLab/LaunchDarkly connectors (`POST /v1/changes/{provider}`) + `domains/webhook` HMAC dispatcher (mig 0010) + `/v1/admin/webhooks`, fired on incident open/resolve |
+| **P2-G4** | 16 | ✅ | `domains/buscontext` (mig 0011) + exposure tags; `/v1/admin/business-context`, `/v1/business-context`, `/v1/incidents/{id}/context` |
+| **P2-G6** | 20/27.2 | ✅ | `domains/postmortem` (mig 0012) + CERT-In export; `/v1/admin/postmortems/*` |
+| **P2-G9** | 13.3 | ✅ | continuous calibration (mig 0013) — per-(tenant,service) confidence multiplier from `incident_feedback`; `POST /v1/admin/incidents/{id}/feedback` |
+| **P2-G13** | 22.4 | ✅ | `domains/grafana` Loki-compat read source; `/loki/api/v1/*` |
+| **P2-G15** | 29.3 | ✅ | `cmd/mcp` stdio MCP server (query/incidents/rca/topology/deploy tools) |
+| **P2-G16** | 8.5/17.4/7.5 | ✅ | `/v1/export`, `POST /v1/alerts/simulate` (`domains/routingsim`), `GET /v1/analytics/ttfiq` (`domains/ttfiq`) |
+
+Migrations reconciled sequentially: 0010 webhooks · 0011 business_context · 0012 postmortems · 0013 incident_feedback.
+
+Remaining (tractable, self, sequential): **P2-G2** cost-transparent retention (non-gated part), **P2-G5** war-room core (non-Slack).
+
+Gated on infra not yet built (reported, not faked): **P2-G7** Slack/Teams apps · **P2-G8** GST/regional-language (Qeet Pay / Qeet Notify) · **P2-G10** RCA learned ranker + **P2-G11** Copilot GA (ONNX Tier-1 + LLM gateway + labeled corpus) · **P2-G12** ONNX anomaly tiers · **P2-G17** billing (Qeet Pay).
+
+**Frontend** (console): rebuilt separately — see the console foundation + route pages work.
