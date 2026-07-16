@@ -108,6 +108,15 @@ func main() {
 		// Deployment Intelligence — ranked culprit scoring + health + rollback (Module 15.2–15.4)
 		rt.Get("/deploy/culprits", handler.DeployCulprits(ch, pool))
 
+		// Business Context Correlation Layer — exposure tags (Module 16 / P2-G4)
+		rt.Get("/business-context", handler.BusContextByService(pool))
+		rt.Get("/incidents/{id}/context", handler.BusContextForIncident(pool))
+
+		// Export/programmatic access, routing simulation, TTFIQ (Modules 8.5/17.4/7.5 / P2-G16)
+		rt.Get("/export", handler.Export(ch, pool))
+		rt.Post("/alerts/simulate", handler.SimulateAlertRouting(pool))
+		rt.Get("/analytics/ttfiq", handler.TTFIQ(pool))
+
 		// Correlation-aware panel overlays (Module 22.2)
 		rt.Get("/overlays", handler.Overlays(ch, pool))
 
@@ -154,6 +163,20 @@ func main() {
 
 		// Incident feedback → continuous calibration (Module 13.3)
 		rt.Post("/incidents/{id}/feedback", handler.SubmitIncidentFeedback(pool))
+
+		// Business context mappings CRUD (Module 16 / P2-G4)
+		rt.Post("/business-context", handler.BusContextCreate(pool))
+		rt.Get("/business-context", handler.BusContextList(pool))
+		rt.Delete("/business-context/{id}", handler.BusContextDelete(pool))
+
+		// Postmortems + remediation commitments (Module 20) + CERT-In export (Module 27.2 / P2-G6)
+		rt.Post("/postmortems", handler.CreatePostmortem(pool))
+		rt.Get("/postmortems", handler.ListPostmortems(pool))
+		rt.Get("/postmortems/{id}", handler.GetPostmortem(pool))
+		rt.Patch("/postmortems/{id}", handler.UpdatePostmortem(pool))
+		rt.Post("/postmortems/{id}/commitments", handler.CreatePostmortemCommitment(pool))
+		rt.Get("/postmortems/{id}/commitments", handler.ListPostmortemCommitments(pool))
+		rt.Get("/postmortems/{id}/cert-in-export", handler.ExportPostmortemCERTIn(pool))
 
 		// In-flight remap program (Module 04.2)
 		rt.Get("/transform", handler.GetTransform(pool))
