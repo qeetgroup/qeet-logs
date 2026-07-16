@@ -103,10 +103,16 @@ Shipped on `develop` (Go build/vet/test green across all domains; ClickHouse/Pos
 | **P2-G2** | 6.4/28 | ✅ (non-gated part) | `domains/retention` `EstimateCost`/`WhatIfRetention`; `GET /v1/admin/retention/cost` (transparent $/GB-month × observed ingest × window). Cold-tier S3 tiering still 🔒 |
 | **P2-G5** | 18 | ✅ (non-Slack part) | `domains/warroom` (mig 0014 sessions/entries/roles) + declare/session/entries/roles/handoff admin API. Two-way Slack/Teams sync still 🔒 (P2-G7) |
 
-Migrations reconciled sequentially: 0010 webhooks · 0011 business_context · 0012 postmortems · 0013 incident_feedback · 0014 incident_sessions.
+| **P2-G7** | 19 | ✅ (one-way part) | `domains/chatops` Slack/Teams incoming-webhook formatters + `POST /v1/admin/chatops/test`. Two-way slash-commands + OAuth app install still 🔒 |
+| **P2-G10** | 11.2 | ✅ (substrate) | `domains/rca` feature-weighted ranker (`Rank`/`Weights`/gate) + `rca_feedback` label store (mig 0015) + `POST /v1/admin/rca/feedback`. Trained learned-to-rank model still 🔒 (needs corpus) |
+| **P2-G11** | 12 | ✅ (substrate) | `domains/aigateway` opt-in + PII-mask + audit (mig 0016) wrapping the existing Anthropic call; `POST /v1/query/copilot`, `/v1/admin/ai-features`. Multi-turn + Tier-2 routing still 🔒 |
+| **P2-G12** | 14.1/14.2 | ✅ (statistical tier) | `domains/forecast` OLS/EWMA/seasonal capacity-exhaustion + deploy-aware trend; `GET /v1/forecast`. ONNX model tiers (14.3+) still 🔒/Phase-3 |
+| **P2-G17** | 33.4 | ✅ (compute part) | `domains/billing` `ComputeInvoicePreview` + plans (mig 0017); `/v1/admin/plan`, `/v1/admin/billing/preview`. Actual charging via Qeet Pay (33.5) still 🔒 |
 
-**All tractable (non-gated) Phase-2 backend gaps are shipped.**
+Migrations reconciled sequentially: 0010 webhooks · 0011 business_context · 0012 postmortems · 0013 incident_feedback · 0014 incident_sessions · 0015 rca_feedback · 0016 ai_gateway · 0017 tenant_plans.
 
-Gated on infra not yet built (reported, not faked): **P2-G7** Slack/Teams apps · **P2-G8** GST/regional-language (Qeet Pay / Qeet Notify) · **P2-G10** RCA learned ranker + **P2-G11** Copilot GA (ONNX Tier-1 + LLM gateway + labeled corpus) · **P2-G12** ONNX anomaly tiers · **P2-G17** billing (Qeet Pay).
+**All Phase-2 backend gaps now have shipped code — either complete (G1/G3/G4/G6/G9/G13/G15/G16) or the honest non-gated substrate (G2/G5/G7/G10/G11/G12/G17).** 20 Go packages build/vet/test green.
 
-**Frontend** (console): rebuilt separately — see the console foundation + route pages work.
+Still genuinely gated (need infra/products that do not exist — NOT faked): trained learned-to-rank model + ONNX Tier-1 runtime (G10/G12 GA), conversational multi-turn + Tier-2 model routing (G11 GA), Slack/Teams OAuth apps + two-way sync (G7), cold-tier S3 lifecycle (G2), actual invoicing via **Qeet Pay** (G17/G8 GST), regional-language via **Qeet Notify** (G8) — each documented in-code where its substrate lives.
+
+**Frontend** (console): rebuilt separately (bun + @qeetrix/ui + TanStack Start) — integration in progress.
