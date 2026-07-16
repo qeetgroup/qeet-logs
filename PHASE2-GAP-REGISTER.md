@@ -100,10 +100,12 @@ Shipped on `develop` (Go build/vet/test green across all domains; ClickHouse/Pos
 | **P2-G13** | 22.4 | ✅ | `domains/grafana` Loki-compat read source; `/loki/api/v1/*` |
 | **P2-G15** | 29.3 | ✅ | `cmd/mcp` stdio MCP server (query/incidents/rca/topology/deploy tools) |
 | **P2-G16** | 8.5/17.4/7.5 | ✅ | `/v1/export`, `POST /v1/alerts/simulate` (`domains/routingsim`), `GET /v1/analytics/ttfiq` (`domains/ttfiq`) |
+| **P2-G2** | 6.4/28 | ✅ (non-gated part) | `domains/retention` `EstimateCost`/`WhatIfRetention`; `GET /v1/admin/retention/cost` (transparent $/GB-month × observed ingest × window). Cold-tier S3 tiering still 🔒 |
+| **P2-G5** | 18 | ✅ (non-Slack part) | `domains/warroom` (mig 0014 sessions/entries/roles) + declare/session/entries/roles/handoff admin API. Two-way Slack/Teams sync still 🔒 (P2-G7) |
 
-Migrations reconciled sequentially: 0010 webhooks · 0011 business_context · 0012 postmortems · 0013 incident_feedback.
+Migrations reconciled sequentially: 0010 webhooks · 0011 business_context · 0012 postmortems · 0013 incident_feedback · 0014 incident_sessions.
 
-Remaining (tractable, self, sequential): **P2-G2** cost-transparent retention (non-gated part), **P2-G5** war-room core (non-Slack).
+**All tractable (non-gated) Phase-2 backend gaps are shipped.**
 
 Gated on infra not yet built (reported, not faked): **P2-G7** Slack/Teams apps · **P2-G8** GST/regional-language (Qeet Pay / Qeet Notify) · **P2-G10** RCA learned ranker + **P2-G11** Copilot GA (ONNX Tier-1 + LLM gateway + labeled corpus) · **P2-G12** ONNX anomaly tiers · **P2-G17** billing (Qeet Pay).
 
