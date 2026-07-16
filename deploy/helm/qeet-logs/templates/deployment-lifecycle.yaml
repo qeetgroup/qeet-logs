@@ -1,0 +1,42 @@
+{{- if .Values.lifecycle.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "qeet-logs.fullname" . }}-lifecycle
+  labels:
+    {{- include "qeet-logs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: lifecycle
+spec:
+  replicas: {{ .Values.lifecycle.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "qeet-logs.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: lifecycle
+  template:
+    metadata:
+      labels:
+        {{- include "qeet-logs.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: lifecycle
+    spec:
+      containers:
+        - name: lifecycle
+          image: "{{ .Values.lifecycle.image.repository }}:{{ .Values.lifecycle.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.lifecycle.image.pullPolicy }}
+          # Cold-tier mover reads DATABASE_URL + CLICKHOUSE_* from the shared
+          # Secret and CLICKHOUSE_DATABASE from the ConfigMap (same surface as the
+          # other binaries via config.Load). No Service, no HPA — it is a
+          # singleton background worker, not a request-serving process.
+          envFrom:
+            - configMapRef:
+                name: {{ include "qeet-logs.fullname" . }}
+            - secretRef:
+                name: {{ .Values.secrets.existingSecret }}
+          {{- with .Values.lifecycle.interval }}
+          env:
+            # Snapshot→plan→move interval (Go duration). Empty ⇒ binary default (6h).
+            - name: LIFECYCLE_INTERVAL
+              value: {{ . | quote }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.lifecycle.resources | nindent 12 }}
+{{- end }}

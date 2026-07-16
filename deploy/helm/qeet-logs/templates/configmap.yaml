@@ -7,3 +7,5 @@ metadata:
 data:
   ENV: {{ .Values.config.env | quote }}
   CLICKHOUSE_DATABASE: {{ .Values.config.clickhouseDatabase | quote }}
+  # Per-tenant request cap (requests/minute) on the query surfaces. Non-secret.
+  RATE_LIMIT_PER_MINUTE: {{ .Values.config.rateLimitPerMinute | quote }}
