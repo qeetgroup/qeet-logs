@@ -137,6 +137,17 @@ func main() {
 		rt.Post("/query_range", handler.PromRangeQuery(ch, pool))
 	})
 
+	// Grafana Loki-compatible read data source (Module 22.4 / P2-G13) — point a
+	// Grafana "Loki" data source here; auth via X-Qeet-Api-Key → tenant + scopes.
+	r.Route("/loki/api/v1", func(rt chi.Router) {
+		rt.Use(apimw.APIKeyAuth(pool))
+		rt.Get("/query_range", handler.GrafanaLokiQueryRange(ch, pool))
+		rt.Get("/labels", handler.GrafanaLokiLabels(ch, pool))
+		rt.Get("/label/{name}/values", handler.GrafanaLokiLabelValues(ch, pool))
+		rt.Get("/series", handler.GrafanaLokiSeries(ch, pool))
+		rt.Get("/status/buildinfo", handler.GrafanaLokiBuildInfo())
+	})
+
 	// Admin API — accepts an API key with logs:admin OR a Qeet ID Bearer JWT.
 	r.Route("/v1/admin", func(rt chi.Router) {
 		rt.Use(apimw.AnyAuth(pool, cfg.QeetIDIssuer))
