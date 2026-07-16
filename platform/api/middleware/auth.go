@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -28,6 +29,13 @@ func APIKeyAuth(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := r.Header.Get("X-Qeet-Api-Key")
+			// Browsers cannot set custom headers on a WebSocket upgrade, so the
+			// live-tail WS accepts the key as an `api_key` query param (the SDK
+			// WS-tail contract). Confined to upgrade requests so API keys never
+			// appear in normal request URLs/access logs; always paired with TLS.
+			if key == "" && isWebSocketUpgrade(r) {
+				key = r.URL.Query().Get("api_key")
+			}
 			if key == "" {
 				writeError(w, http.StatusUnauthorized, "missing X-Qeet-Api-Key")
 				return
@@ -77,6 +85,12 @@ func HasScope(ctx context.Context, want ...string) bool {
 		}
 	}
 	return false
+}
+
+// isWebSocketUpgrade reports whether the request is a WebSocket upgrade (the
+// only place APIKeyAuth accepts the key via the `api_key` query param).
+func isWebSocketUpgrade(r *http.Request) bool {
+	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) {
