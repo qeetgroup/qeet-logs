@@ -1,7 +1,0 @@
-# Local-dev override (untracked) — mounts the cold-tier storage policy into
-# ClickHouse so clickhouse/migrations/0009_cold_tier.sql (hot_cold policy) can be
-# applied against the local MinIO. See clickhouse/config/storage.xml DEPLOY note.
-services:
-  clickhouse:
-    volumes:
-      - ./clickhouse/config/storage.xml:/etc/clickhouse-server/config.d/storage.xml:ro
