@@ -1,0 +1,94 @@
+# Qeet Logs Collector runtime config (PRD Module 01.3 / 04.1).
+#
+# Kubernetes-native auto-discovery: the filelog receiver tails every pod log on
+# the node (zero YAML per workload), the k8sattributes processor enriches each
+# record with pod/namespace/node metadata, and everything is exported over OTLP
+# to the Qeet Logs ingest gateway. Logs, metrics, and traces sent by SDKs to the
+# in-cluster OTLP endpoint are forwarded on the same pipelines.
+#
+# The gateway resolves the tenant from X-Qeet-Api-Key (from the mounted secret).
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Pod-log auto-discovery — no per-workload configuration required.
+  filelog:
+    include:
+      - /var/log/pods/*/*/*.log
+    exclude:
+      - /var/log/pods/*/otel-collector/*.log
+    include_file_path: true
+    start_at: end
+    operators:
+      # containerd/CRI-O format: "<time> <stream> <flags> <log>"
+      - type: container
+        id: container-parser
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+  # Adds k8s.namespace.name / k8s.pod.name / k8s.node.name as resource
+  # attributes — which the gateway promotes to first-class columns (Module 04.3).
+  k8sattributes:
+    auth_type: serviceAccount
+    passthrough: false
+    extract:
+      metadata:
+        - k8s.namespace.name
+        - k8s.pod.name
+        - k8s.node.name
+        - k8s.deployment.name
+    pod_association:
+      - sources:
+          - from: resource_attribute
+            name: k8s.pod.ip
+      - sources:
+          - from: connection
+
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 5s
+    override: false
+
+  batch:
+    send_batch_size: 512
+    timeout: 2s
+
+exporters:
+  otlphttp:
+    endpoint: ${env:QEET_LOGS_ENDPOINT}
+    headers:
+      X-Qeet-Api-Key: ${env:QEET_LOGS_API_KEY}
+    compression: gzip
+    retry_on_failure:
+      enabled: true
+    sending_queue:
+      enabled: true
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    logs:
+      receivers: [otlp, filelog]
+      processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+      exporters: [otlphttp]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+      exporters: [otlphttp]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+      exporters: [otlphttp]

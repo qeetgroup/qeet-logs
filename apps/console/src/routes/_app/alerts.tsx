@@ -1,322 +1,317 @@
 import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Badge,
   Button,
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  DataState,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   EmptyState,
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
   Input,
+  Label,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  Switch,
+  StatusPill,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  TimeSince,
 } from "@qeetrix/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertTriangleIcon, Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
+import { BellRingIcon, Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
+import { useConfirmDialog } from "@/components/confirm-dialog";
+import { PageHeader } from "@/components/page-header";
 import { api } from "@/lib/api";
+import { relativeTime } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/alerts")({ component: AlertsPage });
 
 type AlertRule = {
   id: string;
   name: string;
-  kind: "threshold" | "absence";
-  service?: string;
-  condition?: string;
-  threshold?: number;
+  kind: "threshold" | "absence" | string;
+  service?: string | null;
+  condition?: string | null;
+  threshold?: number | null;
   window_seconds: number;
-  channels: Array<{ type: string; target: string }>;
+  channels?: unknown;
   enabled: boolean;
   created_at: string;
 };
 
-type CreateAlertInput = {
+type NewRule = {
   name: string;
   kind: "threshold" | "absence";
   service?: string;
   condition?: string;
   threshold?: number;
   window_seconds: number;
-  channels: Array<{ type: string; target: string }>;
+  channels: string[];
 };
 
-function useAlerts() {
-  return useQuery({
-    queryKey: ["alerts"],
+function AlertsPage() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [dialog, confirm] = useConfirmDialog();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState<NewRule>({
+    name: "",
+    kind: "threshold",
+    service: "",
+    condition: "",
+    threshold: 10,
+    window_seconds: 300,
+    channels: [],
+  });
+  const [channelsText, setChannelsText] = useState("");
+
+  const rulesQ = useQuery({
+    queryKey: ["alert-rules"],
     queryFn: () => api<AlertRule[]>("/v1/admin/alert-rules"),
+    retry: false,
     meta: { silent: true },
   });
-}
 
-function CreateSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const qc = useQueryClient();
-  const [kind, setKind] = useState<"threshold" | "absence">("threshold");
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const createM = useMutation({
-    mutationFn: (data: CreateAlertInput) =>
-      api<AlertRule>("/v1/admin/alert-rules", { method: "POST", body: data }),
+  const createRule = useMutation({
+    mutationFn: (body: NewRule) => api("/v1/admin/alert-rules", { method: "POST", body }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["alerts"] });
-      onOpenChange(false);
+      qc.invalidateQueries({ queryKey: ["alert-rules"] });
+      setOpen(false);
+      setForm({
+        name: "",
+        kind: "threshold",
+        service: "",
+        condition: "",
+        threshold: 10,
+        window_seconds: 300,
+        channels: [],
+      });
+      setChannelsText("");
     },
-    meta: { successMessage: "Alert rule created" },
+    meta: { successMessage: t("pages.alerts.createdToast") },
   });
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const name = String(fd.get("name") ?? "").trim();
-    const service = String(fd.get("service") ?? "").trim();
-    const condition = String(fd.get("condition") ?? "").trim();
-    const windowSec = Number(fd.get("window_seconds") ?? 300);
-    const threshold = kind === "threshold" ? Number(fd.get("threshold") ?? 0) : undefined;
-    const webhookTarget = String(fd.get("webhook_target") ?? "").trim();
+  const deleteRule = useMutation({
+    mutationFn: (id: string) => api(`/v1/admin/alert-rules/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alert-rules"] }),
+    meta: { successMessage: t("pages.alerts.deletedToast") },
+  });
 
-    const errs: Record<string, string> = {};
-    if (!name) errs.name = "Name is required.";
-    if (kind === "threshold" && (!threshold || threshold <= 0)) errs.threshold = "Must be > 0.";
-    setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
-
-    createM.mutate({
-      name,
-      kind,
-      service: service || undefined,
-      condition: condition || undefined,
-      threshold,
-      window_seconds: windowSec,
-      channels: webhookTarget ? [{ type: "webhook", target: webhookTarget }] : [],
+  function submit() {
+    const channels = channelsText
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+    createRule.mutate({
+      ...form,
+      service: form.service?.trim() || undefined,
+      condition: form.condition?.trim() || undefined,
+      channels,
     });
   }
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>New Alert Rule</SheetTitle>
-          <SheetDescription>
-            Fires when the condition is met over the evaluation window.
-          </SheetDescription>
-        </SheetHeader>
-        <form onSubmit={handleSubmit} className="flex h-full flex-col">
-          <div className="flex-1 overflow-y-auto px-4 py-3">
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="a-name">Name</FieldLabel>
-                <Input id="a-name" name="name" placeholder="High error rate" />
-                {errors.name && <FieldError>{errors.name}</FieldError>}
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="a-kind">Type</FieldLabel>
-                <Select name="kind" value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
-                  <SelectTrigger id="a-kind"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="threshold">Threshold — fires when count exceeds N</SelectItem>
-                    <SelectItem value="absence">Absence — fires when no logs for N seconds</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="a-service">Service (optional)</FieldLabel>
-                <Input id="a-service" name="service" placeholder="payments, auth, …" />
-                <FieldDescription>Leave blank to evaluate across all services.</FieldDescription>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="a-condition">Condition (optional)</FieldLabel>
-                <Input id="a-condition" name="condition" placeholder="level = 'error'" />
-                <FieldDescription>LogQL++ WHERE fragment applied before counting.</FieldDescription>
-              </Field>
-              {kind === "threshold" && (
-                <Field>
-                  <FieldLabel htmlFor="a-threshold">Threshold count</FieldLabel>
-                  <Input id="a-threshold" name="threshold" type="number" min={1} defaultValue={10} />
-                  {errors.threshold && <FieldError>{errors.threshold}</FieldError>}
-                </Field>
-              )}
-              <Field>
-                <FieldLabel htmlFor="a-window">Evaluation window (seconds)</FieldLabel>
-                <Input id="a-window" name="window_seconds" type="number" min={60} defaultValue={300} />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="a-webhook">Webhook URL (optional)</FieldLabel>
-                <Input id="a-webhook" name="webhook_target" type="url" placeholder="https://…" />
-                <FieldDescription>POST JSON payload on alert state change.</FieldDescription>
-              </Field>
-            </FieldGroup>
-          </div>
-          <SheetFooter className="border-t px-4 py-3">
-            <SheetClose render={<Button variant="outline" type="button" />}>Cancel</SheetClose>
-            <Button type="submit" disabled={createM.isPending}>
-              {createM.isPending && <Loader2Icon className="mr-1.5 size-4 animate-spin" />}
-              Create Rule
-            </Button>
-          </SheetFooter>
-        </form>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function AlertsPage() {
-  const alertsQ = useAlerts();
-  const qc = useQueryClient();
-  const [creating, setCreating] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
-
-  const deleteM = useMutation({
-    mutationFn: (id: string) => api(`/v1/admin/alert-rules/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["alerts"] });
-      setDeleting(null);
-    },
-    meta: { successMessage: "Alert rule deleted" },
-  });
-
-  const rules = alertsQ.data ?? [];
+  const rules = rulesQ.data ?? [];
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-heading text-2xl font-semibold tracking-tight">Alert Rules</h1>
-          <p className="text-sm text-muted-foreground">Threshold and absence alerting</p>
-        </div>
-        <Button onClick={() => setCreating(true)}>
-          <PlusIcon className="mr-1.5 size-4" /> New Rule
-        </Button>
-      </div>
+    <>
+      <PageHeader
+        title={t("pages.alerts.title")}
+        description={t("pages.alerts.description")}
+        actions={
+          <Button onClick={() => setOpen(true)}>
+            <PlusIcon /> {t("pages.alerts.newRule")}
+          </Button>
+        }
+      />
 
       <Card>
-        <CardHeader>
-          <CardTitle>Rules</CardTitle>
-          <CardDescription>{rules.length} rule{rules.length !== 1 ? "s" : ""} configured</CardDescription>
-        </CardHeader>
         <CardContent className="p-0">
-          {alertsQ.isLoading ? (
-            <div className="px-6 py-12 text-center">
-              <Loader2Icon className="mx-auto size-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : rules.length === 0 ? (
-            <div className="px-6 py-12">
+          <DataState
+            isLoading={rulesQ.isLoading}
+            isError={rulesQ.isError}
+            error={rulesQ.error}
+            isEmpty={!rulesQ.isLoading && rules.length === 0}
+            empty={
               <EmptyState
-                icon={AlertTriangleIcon}
-                title="No alert rules"
-                description="Create a threshold or absence rule to get notified when something goes wrong."
-              >
-                <Button onClick={() => setCreating(true)}>
-                  <PlusIcon className="mr-1.5 size-4" /> Create first rule
-                </Button>
-              </EmptyState>
-            </div>
-          ) : (
+                icon={BellRingIcon}
+                title={t("pages.alerts.emptyTitle")}
+                description={t("pages.alerts.emptyDescription")}
+                action={
+                  <Button onClick={() => setOpen(true)}>
+                    <PlusIcon /> {t("pages.alerts.newRule")}
+                  </Button>
+                }
+              />
+            }
+            skeletonRows={5}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Service</TableHead>
-                  <TableHead>Window</TableHead>
-                  <TableHead>Channels</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
+                  <TableHead>{t("columns.name")}</TableHead>
+                  <TableHead>{t("columns.kind")}</TableHead>
+                  <TableHead>{t("columns.service")}</TableHead>
+                  <TableHead>{t("columns.window")}</TableHead>
+                  <TableHead>{t("columns.status")}</TableHead>
+                  <TableHead>{t("columns.created")}</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rules.map((rule) => (
-                  <TableRow key={rule.id}>
-                    <TableCell className="font-medium">{rule.name}</TableCell>
+                {rules.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="font-medium">{r.name}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="capitalize">{rule.kind}</Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{rule.service ?? "all"}</TableCell>
-                    <TableCell className="text-muted-foreground">{rule.window_seconds}s</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {rule.channels.length > 0
-                        ? rule.channels.map((c) => c.type).join(", ")
-                        : "—"}
-                    </TableCell>
-                    <TableCell>
-                      <Switch checked={rule.enabled} aria-label="Toggle rule" />
+                      <Badge variant="outline">{r.kind}</Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      <TimeSince value={rule.created_at} />
+                      {r.service ?? t("pages.alerts.allServices")}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{r.window_seconds}s</TableCell>
+                    <TableCell>
+                      <StatusPill kind={r.enabled ? "success" : "muted"}>
+                        {r.enabled ? t("pages.alerts.enabled") : t("pages.alerts.disabled")}
+                      </StatusPill>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {relativeTime(r.created_at)}
                     </TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="text-muted-foreground hover:text-destructive"
-                        onClick={() => setDeleting(rule.id)}
+                        aria-label={t("pages.alerts.deleteAria", { name: r.name })}
+                        onClick={() =>
+                          confirm({
+                            title: t("pages.alerts.deleteTitle", { name: r.name }),
+                            description: t("pages.alerts.deleteDescription"),
+                            confirmLabel: t("actions.delete"),
+                            onConfirm: () => deleteRule.mutate(r.id),
+                          })
+                        }
                       >
-                        <Trash2Icon className="size-4" />
+                        <Trash2Icon className="text-destructive" />
                       </Button>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          )}
+          </DataState>
         </CardContent>
       </Card>
 
-      <CreateSheet open={creating} onOpenChange={setCreating} />
-
-      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this alert rule?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This is permanent and cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <Button
-              variant="destructive"
-              onClick={() => deleting && deleteM.mutate(deleting)}
-              disabled={deleteM.isPending}
-            >
-              {deleteM.isPending && <Loader2Icon className="mr-1.5 size-4 animate-spin" />}
-              Delete
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("pages.alerts.createTitle")}</DialogTitle>
+            <DialogDescription>{t("pages.alerts.createDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="rule-name">{t("fields.name")}</Label>
+              <Input
+                id="rule-name"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder={t("pages.alerts.namePlaceholder")}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-2">
+                <Label>{t("columns.kind")}</Label>
+                <Select
+                  value={form.kind}
+                  onValueChange={(v) => setForm((f) => ({ ...f, kind: v as NewRule["kind"] }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="threshold">{t("pages.alerts.kindThreshold")}</SelectItem>
+                    <SelectItem value="absence">{t("pages.alerts.kindAbsence")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="rule-service">{t("pages.alerts.serviceOptional")}</Label>
+                <Input
+                  id="rule-service"
+                  value={form.service}
+                  onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))}
+                  placeholder="checkout"
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="rule-condition">{t("pages.alerts.condition")}</Label>
+              <Input
+                id="rule-condition"
+                className="font-mono-logs"
+                value={form.condition}
+                onChange={(e) => setForm((f) => ({ ...f, condition: e.target.value }))}
+                placeholder='level = "error"'
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="rule-threshold">{t("pages.alerts.threshold")}</Label>
+                <Input
+                  id="rule-threshold"
+                  type="number"
+                  value={form.threshold ?? ""}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, threshold: Number(e.target.value) || undefined }))
+                  }
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="rule-window">{t("pages.alerts.windowSeconds")}</Label>
+                <Input
+                  id="rule-window"
+                  type="number"
+                  value={form.window_seconds}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, window_seconds: Number(e.target.value) || 300 }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="rule-channels">{t("pages.alerts.channels")}</Label>
+              <Input
+                id="rule-channels"
+                value={channelsText}
+                onChange={(e) => setChannelsText(e.target.value)}
+                placeholder="email:oncall@acme.com, slack:#alerts"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline">{t("actions.cancel")}</Button>} />
+            <Button onClick={submit} disabled={!form.name.trim() || createRule.isPending}>
+              {createRule.isPending && <Loader2Icon className="animate-spin" />}
+              {t("pages.alerts.createRule")}
             </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {dialog}
+    </>
   );
 }

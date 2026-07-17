@@ -1,0 +1,64 @@
+# Qeet Logs — Caddy reverse proxy (bring-your-own-TLS deployment path).
+#
+# The DEFAULT production ingress is the Helm chart's nginx Ingress + cert-manager
+# (deploy/helm/qeet-logs, hosts api.logs.qeet.in / ingest.logs.qeet.in). This
+# Caddyfile is the non-Kubernetes / single-host alternative: run the Go query
+# API, the Rust ingest gateway, and (optionally) the console behind Caddy, which
+# terminates TLS with automatic Let's Encrypt certificates.
+#
+#   caddy run --config deploy/Caddyfile
+#
+# Point the app processes at their local ports (see CLAUDE.md port map):
+#   query API      127.0.0.1:8100   (REST query, admin, /metrics, Loki/Prom)
+#   ingest gateway 127.0.0.1:8101   (SDK ingest)  + 4318 (OTLP/HTTP)
+#   console (SSR)  127.0.0.1:3020   (optional)
+
+{
+	# Contact for the ACME account (Let's Encrypt expiry notices).
+	email ops@qeet.in
+}
+
+# ── Query / admin API ────────────────────────────────────────────────────────
+api.logs.qeet.in {
+	encode zstd gzip
+
+	# /metrics is for INTERNAL Prometheus scraping only — never expose it on the
+	# public edge. Scrape it in-cluster / on the private network instead.
+	@metrics path /metrics
+	respond @metrics 404
+
+	reverse_proxy 127.0.0.1:8100 {
+		# Preserve the client protocol so the app emits HSTS correctly.
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	# Caddy adds HSTS on TLS sites by default; make the security posture explicit.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+}
+
+# ── Ingest gateway (SDK ingest + OTLP/HTTP) ──────────────────────────────────
+ingest.logs.qeet.in {
+	encode zstd gzip
+
+	# OTLP/HTTP (traces / metrics / logs) → the gateway's OTLP listener (:4318).
+	# Front it under /otlp/* so it never collides with the SDK ingest routes.
+	handle_path /otlp/* {
+		reverse_proxy 127.0.0.1:4318
+	}
+
+	# Everything else → the SDK ingest HTTP surface (:8101).
+	reverse_proxy 127.0.0.1:8101 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	header -Server
+}
+
+# ── Console (optional; omit if the console is hosted elsewhere) ───────────────
+# logs.qeet.in {
+# 	encode zstd gzip
+# 	reverse_proxy 127.0.0.1:3020
+# }

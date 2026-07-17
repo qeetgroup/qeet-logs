@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1
+# Qeet Logs — MCP server (Go). stdio JSON-RPC bridge over the query API; an MCP
+# client spawns it and talks over stdin/stdout — it is not a network daemon.
+# Env: QEET_LOGS_URL (default http://localhost:8100), QEET_LOGS_API_KEY.
+# Build context = repository root:
+#   docker build -f deploy/docker/Dockerfile.mcp -t qeet-logs-mcp .
+ARG GO_VERSION=1.25.2
+
+# ── build ──────────────────────────────────────────────────────────────────
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
+WORKDIR /src
+ENV CGO_ENABLED=0
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY . .
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+    -o /out/mcp ./cmd/mcp
+
+# ── runtime ────────────────────────────────────────────────────────────────
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+LABEL org.opencontainers.image.source="https://github.com/qeetgroup/qeet-logs" \
+      org.opencontainers.image.title="qeet-logs-mcp" \
+      org.opencontainers.image.description="Qeet Logs MCP (Model Context Protocol) server"
+COPY --from=build /out/mcp /usr/local/bin/mcp
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/mcp"]

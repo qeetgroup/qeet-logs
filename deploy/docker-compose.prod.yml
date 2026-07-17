@@ -1,0 +1,288 @@
+# Qeet Logs — production-flavoured Compose stack.
+#
+# Runs the published GHCR images + backing infra on one host. Intended for
+# staging / single-node prod / demos; multi-node prod uses deploy/helm.
+#
+#   REGISTRY=ghcr.io/qeetgroup TAG=1.0.0 docker compose -f deploy/docker-compose.prod.yml up -d
+#
+# SECURITY: every credential below has a dev-grade default purely so the file
+# parses standalone. OVERRIDE all *_PASSWORD / *_KEY values in production via a
+# real environment or `--env-file`, e.g.:
+#   POSTGRES_PASSWORD=... CLICKHOUSE_PASSWORD=... QEET_NOTIFY_API_KEY=... docker compose ... up -d
+#
+# Ports follow CLAUDE.md: query API :8100, ingest :8101 (+OTLP :4318).
+
+name: qeet-logs
+
+# ── Reusable fragments ────────────────────────────────────────────────────────
+x-restart: &restart unless-stopped
+
+x-clickhouse-env: &clickhouse-env
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_DATABASE: ${CLICKHOUSE_DB:-qeet_logs}
+  CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+
+x-bus-env: &bus-env
+  NATS_URL: nats://nats:4222
+  REDIS_URL: redis://redis:6379
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    restart: *restart
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-qeet-logs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qeet-logs}
+      POSTGRES_DB: ${POSTGRES_DB:-qeet-logs}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qeet-logs}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [qeet-logs]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+        reservations: { cpus: "0.25", memory: 256M }
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3-alpine
+    restart: *restart
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-qeet_logs}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    volumes:
+      - chdata:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [qeet-logs]
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 2G }
+        reservations: { cpus: "0.5", memory: 512M }
+
+  nats:
+    image: nats:2.10-alpine
+    restart: *restart
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - natsdata:/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8222/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [qeet-logs]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+  redis:
+    image: redis:7-alpine
+    restart: *restart
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [qeet-logs]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+
+  # Cold/archive object storage (S3 API). Optional — enable the S3_* env on the
+  # app services to use it. Console at :9003, S3 API at :9002.
+  minio:
+    image: minio/minio:latest
+    restart: *restart
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-qeet-logs}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-qeet-logs123}
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [qeet-logs]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+
+  # ── One-shot schema migrations ────────────────────────────────────────────
+  # Postgres metadata schema (golang-migrate format, up/down pairs).
+  migrate:
+    image: ${MIGRATE_IMAGE:-migrate/migrate:v4.19.1}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../migrations:/migrations:ro
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://${POSTGRES_USER:-qeet-logs}:${POSTGRES_PASSWORD:-qeet-logs}@postgres:5432/${POSTGRES_DB:-qeet-logs}?sslmode=disable"
+      - "up"
+    networks: [qeet-logs]
+
+  # ClickHouse DDL (applied via the bundled clickhouse-client; see Makefile ch-migrate).
+  ch-migrate:
+    image: clickhouse/clickhouse-server:25.3-alpine
+    restart: "no"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    volumes:
+      - ../clickhouse/migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'for f in /migrations/*.sql; do echo "applying $$f"; clickhouse-client --host clickhouse --user "${CLICKHOUSE_USER:-default}" --password "${CLICKHOUSE_PASSWORD:-}" --database "${CLICKHOUSE_DB:-qeet_logs}" --multiquery < "$$f"; done'
+    networks: [qeet-logs]
+
+  # ── Application services (published GHCR images) ────────────────────────────
+  query:
+    image: ${REGISTRY:-ghcr.io/qeetgroup}/qeet-logs-query:${TAG:-1.0.0}
+    restart: *restart
+    depends_on:
+      postgres: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      nats: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    environment:
+      <<: [*clickhouse-env, *bus-env]
+      ENV: production
+      HTTP_PORT: "8100"
+      DATABASE_URL: postgres://${POSTGRES_USER:-qeet-logs}:${POSTGRES_PASSWORD:-qeet-logs}@postgres:5432/${POSTGRES_DB:-qeet-logs}?sslmode=disable
+      QEET_ID_ISSUER: ${QEET_ID_ISSUER:-https://api.id.qeet.in}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-.logs.qeet.in}
+    ports:
+      - "${QUERY_PORT:-8100}:8100"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks: [qeet-logs]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+        reservations: { cpus: "0.1", memory: 128M }
+
+  ingest-gateway:
+    image: ${REGISTRY:-ghcr.io/qeetgroup}/qeet-logs-ingest:${TAG:-1.0.0}
+    restart: *restart
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      nats: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *bus-env
+      INGEST_PORT: "8101"
+      DATABASE_URL: postgres://${POSTGRES_USER:-qeet-logs}:${POSTGRES_PASSWORD:-qeet-logs}@postgres:5432/${POSTGRES_DB:-qeet-logs}?sslmode=disable
+      INGEST_RATE_LIMIT_PER_MIN: ${INGEST_RATE_LIMIT_PER_MIN:-1000}
+    ports:
+      - "${INGEST_PORT:-8101}:8101"
+      - "${INGEST_OTLP_PORT:-4318}:4318"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8101/healthz"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks: [qeet-logs]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+        reservations: { cpus: "0.2", memory: 128M }
+
+  ingest-writer:
+    image: ${REGISTRY:-ghcr.io/qeetgroup}/qeet-logs-ingest:${TAG:-1.0.0}
+    restart: *restart
+    entrypoint: ["qeet-logs-writer"]
+    depends_on:
+      clickhouse: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      nats: { condition: service_healthy }
+      ch-migrate: { condition: service_completed_successfully }
+    environment:
+      <<: [*clickhouse-env, *bus-env]
+    networks: [qeet-logs]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+        reservations: { cpus: "0.2", memory: 128M }
+
+  alerter:
+    image: ${REGISTRY:-ghcr.io/qeetgroup}/qeet-logs-alerter:${TAG:-1.0.0}
+    restart: *restart
+    depends_on:
+      postgres: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      nats: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    environment:
+      <<: [*clickhouse-env, *bus-env]
+      ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-qeet-logs}:${POSTGRES_PASSWORD:-qeet-logs}@postgres:5432/${POSTGRES_DB:-qeet-logs}?sslmode=disable
+      QEET_NOTIFY_URL: ${QEET_NOTIFY_URL:-https://api.notify.qeet.in}
+      QEET_NOTIFY_API_KEY: ${QEET_NOTIFY_API_KEY:-}
+    networks: [qeet-logs]
+    deploy:
+      resources:
+        limits: { cpus: "0.2", memory: 128M }
+        reservations: { cpus: "0.05", memory: 64M }
+
+  lifecycle:
+    image: ${REGISTRY:-ghcr.io/qeetgroup}/qeet-logs-lifecycle:${TAG:-1.0.0}
+    restart: *restart
+    depends_on:
+      postgres: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *clickhouse-env
+      ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-qeet-logs}:${POSTGRES_PASSWORD:-qeet-logs}@postgres:5432/${POSTGRES_DB:-qeet-logs}?sslmode=disable
+      LIFECYCLE_INTERVAL: ${LIFECYCLE_INTERVAL:-6h}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-ap-south-1}
+    networks: [qeet-logs]
+    deploy:
+      resources:
+        limits: { cpus: "0.2", memory: 128M }
+        reservations: { cpus: "0.05", memory: 64M }
+
+volumes:
+  pgdata:
+  chdata:
+  redisdata:
+  natsdata:
+  miniodata:
+
+networks:
+  qeet-logs:
+    driver: bridge

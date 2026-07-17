@@ -1,232 +1,144 @@
 import {
   Badge,
-  Button,
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  EmptyState,
+  DataState,
   Input,
+  StatusPill,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  TimeSince,
 } from "@qeetrix/ui";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { ClipboardListIcon, Loader2Icon, RefreshCwIcon } from "lucide-react";
+import { ScrollTextIcon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
+import { PageHeader } from "@/components/page-header";
 import { api } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/audit")({ component: AuditPage });
 
 type AuditEntry = {
-  id: string;
-  tenant_id: string;
-  actor: string;
+  id: number;
+  actor?: string | null;
   action: string;
-  resource: string;
-  resource_id: string | null;
-  status: "ok" | "denied" | "error";
-  ip: string | null;
-  user_agent: string | null;
+  resource?: string | null;
+  resource_id?: string | null;
+  status: string;
+  ip?: string | null;
   created_at: string;
 };
+type AuditResponse = { entries: AuditEntry[]; total: number };
 
-type AuditResponse = {
-  entries: AuditEntry[];
-  total: number;
-};
-
-const STATUS_VARIANT: Record<string, "secondary" | "destructive" | "outline"> = {
-  ok: "secondary",
-  denied: "destructive",
-  error: "outline",
-};
-
-function useAuditLog(actor: string, action: string) {
-  const params: Record<string, string> = {};
-  if (actor) params.actor = actor;
-  if (action) params.action = action;
-
-  return useQuery({
-    queryKey: ["audit-log", actor, action],
-    queryFn: () => api<AuditResponse>("/v1/admin/audit", { query: params }),
-    meta: { silent: true },
-  });
+function statusKind(status: string): "success" | "danger" | "muted" {
+  const s = status.toLowerCase();
+  if (["ok", "success", "allowed"].includes(s)) return "success";
+  if (["error", "denied", "failed"].includes(s)) return "danger";
+  return "muted";
 }
 
 function AuditPage() {
-  const [actorFilter, setActorFilter] = useState("");
-  const [actionFilter, setActionFilter] = useState("");
-  const [committedActor, setCommittedActor] = useState("");
-  const [committedAction, setCommittedAction] = useState("");
+  const { t } = useTranslation();
+  const [actor, setActor] = useState("");
+  const [action, setAction] = useState("");
 
-  const auditQ = useAuditLog(committedActor, committedAction);
+  const q = useQuery({
+    queryKey: ["audit", actor, action],
+    queryFn: () =>
+      api<AuditResponse>("/v1/admin/audit", {
+        query: { actor: actor || undefined, action: action || undefined },
+      }),
+    placeholderData: keepPreviousData,
+    retry: false,
+    meta: { silent: true },
+  });
 
-  function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    setCommittedActor(actorFilter.trim());
-    setCommittedAction(actionFilter.trim());
-  }
-
-  const entries = auditQ.data?.entries ?? [];
-  const total = auditQ.data?.total ?? 0;
+  const entries = q.data?.entries ?? [];
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-heading text-2xl font-semibold tracking-tight">Audit Log</h1>
-          <p className="text-sm text-muted-foreground">
-            Immutable record of all admin and query actions
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => auditQ.refetch()}
-          disabled={auditQ.isFetching}
-        >
-          <RefreshCwIcon className={`mr-1.5 size-4 ${auditQ.isFetching ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-      </div>
+    <>
+      <PageHeader title={t("pages.audit.title")} description={t("pages.audit.description")} />
 
-      {/* Filters */}
       <Card>
-        <CardContent className="py-4">
-          <form onSubmit={handleSearch} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground" htmlFor="audit-actor">
-                Actor (sub / key prefix)
-              </label>
-              <Input
-                id="audit-actor"
-                placeholder="user:123, qeel_abc"
-                value={actorFilter}
-                onChange={(e) => setActorFilter(e.target.value)}
-              />
-            </div>
-            <div className="flex-1">
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground" htmlFor="audit-action">
-                Action
-              </label>
-              <Input
-                id="audit-action"
-                placeholder="api-key.create, query.exec"
-                value={actionFilter}
-                onChange={(e) => setActionFilter(e.target.value)}
-              />
-            </div>
-            <Button type="submit" className="shrink-0">
-              Filter
-            </Button>
-          </form>
+        <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+          <Input
+            placeholder={t("pages.audit.filterActor")}
+            value={actor}
+            onChange={(e) => setActor(e.target.value)}
+            className="sm:max-w-xs"
+            aria-label={t("pages.audit.filterActor")}
+          />
+          <Input
+            placeholder={t("pages.audit.filterAction")}
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+            className="sm:max-w-xs"
+            aria-label={t("pages.audit.filterAction")}
+          />
+          <span className="text-xs text-muted-foreground sm:ms-auto">
+            {t("pages.audit.total", { count: q.data?.total ?? 0 })}
+          </span>
         </CardContent>
       </Card>
 
-      {/* Results */}
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Events</CardTitle>
-            <CardDescription>
-              {auditQ.isLoading ? (
-                <Loader2Icon className="size-4 animate-spin text-muted-foreground" />
-              ) : (
-                `${total.toLocaleString("en-IN")} total`
-              )}
-            </CardDescription>
-          </div>
-        </CardHeader>
         <CardContent className="p-0">
-          {auditQ.isLoading ? (
-            <div className="px-6 py-12 text-center">
-              <Loader2Icon className="mx-auto size-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : entries.length === 0 ? (
-            <div className="px-6 py-12">
-              <EmptyState
-                icon={ClipboardListIcon}
-                title="No audit events"
-                description={
-                  committedActor || committedAction
-                    ? "No events matched the current filter."
-                    : "Audit events will appear here as actions are performed."
-                }
-              >
-                {(committedActor || committedAction) && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setActorFilter("");
-                      setActionFilter("");
-                      setCommittedActor("");
-                      setCommittedAction("");
-                    }}
-                  >
-                    Clear filter
-                  </Button>
-                )}
-              </EmptyState>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Actor</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Resource</TableHead>
-                    <TableHead>Resource ID</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>IP</TableHead>
+          <DataState
+            isLoading={q.isLoading}
+            isError={q.isError}
+            error={q.error}
+            isEmpty={!q.isLoading && entries.length === 0}
+            emptyIcon={ScrollTextIcon}
+            emptyTitle={t("pages.audit.emptyTitle")}
+            emptyDescription={t("pages.audit.emptyDescription")}
+            skeletonRows={8}
+          >
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("columns.when")}</TableHead>
+                  <TableHead>{t("columns.actor")}</TableHead>
+                  <TableHead>{t("columns.action")}</TableHead>
+                  <TableHead>{t("columns.resource")}</TableHead>
+                  <TableHead>{t("columns.status")}</TableHead>
+                  <TableHead>{t("columns.ip")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {entries.map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatDateTime(e.created_at)}
+                    </TableCell>
+                    <TableCell className="font-mono-logs text-xs">{e.actor ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant="muted">{e.action}</Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {e.resource ?? "—"}
+                      {e.resource_id ? (
+                        <span className="font-mono-logs text-xs"> · {e.resource_id}</span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>
+                      <StatusPill kind={statusKind(e.status)}>{e.status}</StatusPill>
+                    </TableCell>
+                    <TableCell className="font-mono-logs text-xs text-muted-foreground">
+                      {e.ip ?? "—"}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {entries.map((entry) => (
-                    <TableRow key={entry.id}>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        <TimeSince value={entry.created_at} />
-                      </TableCell>
-                      <TableCell className="max-w-[160px] truncate font-mono text-xs">
-                        {entry.actor}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap font-mono text-xs">
-                        {entry.action}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {entry.resource}
-                      </TableCell>
-                      <TableCell className="max-w-[120px] truncate font-mono text-xs text-muted-foreground">
-                        {entry.resource_id ?? "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={STATUS_VARIANT[entry.status] ?? "outline"}
-                          className="uppercase text-[10px]"
-                        >
-                          {entry.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {entry.ip ?? "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+                ))}
+              </TableBody>
+            </Table>
+          </DataState>
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 }

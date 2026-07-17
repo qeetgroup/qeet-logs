@@ -23,6 +23,17 @@ pub struct IngestInput {
     pub span_id: Option<String>,
     /// Used only to derive the pseudonymous `user_linkage_key`; never stored raw.
     pub user_id: Option<String>,
+    // Deployment + k8s enrichment (Module 04.3 / Gap 7). Explicit snake_case
+    // fields; the OTLP path fills these from resource attributes. Any common
+    // alternate spellings arriving in `extra` are also harvested in build_record.
+    pub git_sha: Option<String>,
+    pub deploy_id: Option<String>,
+    pub pr_number: Option<String>,
+    pub k8s_namespace: Option<String>,
+    pub k8s_pod: Option<String>,
+    pub k8s_node: Option<String>,
+    /// OTel resource attributes (object); serialized to the `resource` column.
+    pub resource: Option<Value>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -43,6 +54,12 @@ pub struct LogRecord {
     pub resource: String,
     pub trace_id: String,
     pub span_id: String,
+    pub git_sha: String,
+    pub deploy_id: String,
+    pub pr_number: String,
+    pub k8s_namespace: String,
+    pub k8s_pod: String,
+    pub k8s_node: String,
     pub user_linkage_key: String,
     pub pii_detected: Vec<String>,
     pub ingested_by: String,
@@ -73,7 +90,23 @@ pub fn build_record(
         &mut drop_record,
     );
 
-    let mut body_val = Value::Object(input.extra);
+    // Harvest deployment/k8s enrichment: explicit field wins, else pull a common
+    // alternate spelling out of the flattened extras (so it isn't duplicated into
+    // the body). Runs before the body is assembled from `extra`.
+    let mut extra = input.extra;
+    let git_sha = or_harvest(input.git_sha, &mut extra, &["git.sha", "vcs.revision", "commit", "commit_sha"]);
+    let deploy_id = or_harvest(input.deploy_id, &mut extra, &["deploy.id", "deployment.id", "release"]);
+    let pr_number = or_harvest(input.pr_number, &mut extra, &["pr.number", "pull_request", "pr"]);
+    let k8s_namespace = or_harvest(input.k8s_namespace, &mut extra, &["k8s.namespace.name", "namespace"]);
+    let k8s_pod = or_harvest(input.k8s_pod, &mut extra, &["k8s.pod.name", "pod"]);
+    let k8s_node = or_harvest(input.k8s_node, &mut extra, &["k8s.node.name", "node"]);
+
+    let resource = match &input.resource {
+        Some(v) => v.to_string(),
+        None => "{}".to_string(),
+    };
+
+    let mut body_val = Value::Object(extra);
     pii::gate_value(&mut body_val, actions, &mut detected, &mut drop_record);
     let body = serde_json::to_string(&body_val).unwrap_or_else(|_| "{}".to_string());
 
@@ -94,15 +127,42 @@ pub fn build_record(
         level,
         message,
         body,
-        resource: "{}".to_string(),
+        resource,
         trace_id: input.trace_id.unwrap_or_default(),
         span_id: input.span_id.unwrap_or_default(),
+        git_sha,
+        deploy_id,
+        pr_number,
+        k8s_namespace,
+        k8s_pod,
+        k8s_node,
         user_linkage_key,
         pii_detected: detected.into_iter().collect(),
         ingested_by: ingested_by.to_string(),
         retention_days,
     };
     (record, drop_record)
+}
+
+/// Enrichment resolution: an explicit non-empty value wins; otherwise pull the
+/// first matching alternate key out of `extra` (removing it so it isn't also
+/// duplicated into the stored body).
+fn or_harvest(explicit: Option<String>, extra: &mut Map<String, Value>, keys: &[&str]) -> String {
+    if let Some(v) = explicit {
+        if !v.is_empty() {
+            return v;
+        }
+    }
+    for k in keys {
+        if let Some(v) = extra.remove(*k) {
+            match v {
+                Value::String(s) if !s.is_empty() => return s,
+                Value::String(_) | Value::Null => {}
+                other => return other.to_string(),
+            }
+        }
+    }
+    String::new()
 }
 
 /// Pseudonymous, deterministic GDPR-erasure reference: sha256(tenant_id:user_id).

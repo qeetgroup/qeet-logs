@@ -1,187 +1,192 @@
 import {
-  Badge,
   Button,
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  DataState,
   Input,
+  Label,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Separator,
 } from "@qeetrix/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Loader2Icon, SaveIcon } from "lucide-react";
-import { useState } from "react";
+import { Loader2Icon, PlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
+import { PageHeader } from "@/components/page-header";
 import { api } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/settings")({ component: SettingsPage });
 
-type RetentionConfig = {
+type Retention = {
   retention_days: number;
   masking_actions: Record<string, string>;
+  updated_at?: string;
 };
 
-type MaskingField = { key: string; action: string };
-
-const MASKING_OPTIONS = ["mask", "hash", "drop_field", "drop_record"] as const;
-const DEFAULT_FIELDS = ["email", "ip", "card", "phone", "jwt"];
-
-function useRetention() {
-  return useQuery({
-    queryKey: ["retention-config"],
-    queryFn: () => api<RetentionConfig>("/v1/admin/retention"),
-    meta: { silent: true },
-  });
-}
+const ACTIONS = ["redact", "hash", "mask", "drop"] as const;
+type MaskRow = { field: string; action: string };
 
 function SettingsPage() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
-  const retentionQ = useRetention();
-  const [retDays, setRetDays] = useState<number | null>(null);
-  const [masking, setMasking] = useState<MaskingField[] | null>(null);
+  const [days, setDays] = useState(7);
+  const [rows, setRows] = useState<MaskRow[]>([]);
 
-  const config = retentionQ.data;
-  const effectiveDays = retDays ?? config?.retention_days ?? 7;
-
-  const effectiveMasking: MaskingField[] = masking ?? (
-    config
-      ? DEFAULT_FIELDS.map((k) => ({
-          key: k,
-          action: config.masking_actions[k] ?? "mask",
-        }))
-      : DEFAULT_FIELDS.map((k) => ({ key: k, action: "mask" }))
-  );
-
-  const saveM = useMutation({
-    mutationFn: (data: { retention_days: number; masking_actions: Record<string, string> }) =>
-      api("/v1/admin/retention", { method: "PUT", body: data }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["retention-config"] }),
-    meta: { successMessage: "Settings saved" },
+  const cfgQ = useQuery({
+    queryKey: ["retention"],
+    queryFn: () => api<Retention>("/v1/admin/retention"),
+    retry: false,
+    meta: { silent: true },
   });
 
-  function handleSave() {
-    const actions = Object.fromEntries(effectiveMasking.map((m) => [m.key, m.action]));
-    saveM.mutate({ retention_days: effectiveDays, masking_actions: actions });
-  }
+  useEffect(() => {
+    if (cfgQ.data) {
+      setDays(cfgQ.data.retention_days);
+      setRows(
+        Object.entries(cfgQ.data.masking_actions ?? {}).map(([field, action]) => ({
+          field,
+          action,
+        })),
+      );
+    }
+  }, [cfgQ.data]);
 
-  function updateMasking(key: string, action: string) {
-    setMasking((prev) => {
-      const base = prev ?? effectiveMasking;
-      return base.map((m) => (m.key === key ? { ...m, action } : m));
-    });
+  const save = useMutation({
+    mutationFn: (body: Retention) => api("/v1/admin/retention", { method: "PUT", body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["retention"] }),
+    meta: { successMessage: t("pages.settings.saved") },
+  });
+
+  function submit() {
+    const masking_actions: Record<string, string> = {};
+    for (const r of rows) {
+      if (r.field.trim()) masking_actions[r.field.trim()] = r.action;
+    }
+    save.mutate({ retention_days: days, masking_actions });
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-6">
-      <div>
-        <h1 className="font-heading text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Retention policy and PII masking configuration</p>
-      </div>
+    <>
+      <PageHeader
+        title={t("pages.settings.title")}
+        description={t("pages.settings.description")}
+        actions={
+          <Button onClick={submit} disabled={save.isPending}>
+            {save.isPending ? <Loader2Icon className="animate-spin" /> : <SaveIcon />}
+            {t("actions.saveChanges")}
+          </Button>
+        }
+      />
 
-      {/* Retention */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Log Retention</CardTitle>
+      <DataState
+        isLoading={cfgQ.isLoading}
+        isError={cfgQ.isError}
+        error={cfgQ.error}
+        skeletonRows={4}
+      >
+        <div className="grid gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("pages.settings.retentionTitle")}</CardTitle>
               <CardDescription>
-                Per-record TTL — logs are hard-deleted from ClickHouse at the configured age.
+                {t("pages.settings.retentionDescription")}
+                {cfgQ.data?.updated_at
+                  ? t("pages.settings.lastUpdated", {
+                      date: formatDateTime(cfgQ.data.updated_at),
+                    })
+                  : ""}
               </CardDescription>
-            </div>
-            <Badge variant="outline" className="border-primary/40 text-primary text-xs">
-              Per-record TTL
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {retentionQ.isLoading ? (
-            <div className="h-10 w-40 animate-pulse rounded bg-muted" />
-          ) : (
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="ret-days">Retention window (days)</FieldLabel>
+            </CardHeader>
+            <CardContent>
+              <div className="flex max-w-xs flex-col gap-2">
+                <Label htmlFor="retention-days">{t("pages.settings.retentionDaysLabel")}</Label>
                 <Input
-                  id="ret-days"
+                  id="retention-days"
                   type="number"
                   min={1}
                   max={3650}
-                  value={effectiveDays}
-                  onChange={(e) => setRetDays(Number(e.target.value))}
-                  className="w-40"
+                  value={days}
+                  onChange={(e) => setDays(Number(e.target.value) || 1)}
                 />
-                <FieldDescription>
-                  Applied as <code className="text-xs">_retention_days</code> on each ingested record.
-                  ClickHouse TTL enforces deletion automatically.
-                </FieldDescription>
-              </Field>
-            </FieldGroup>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* PII Masking */}
-      <Card>
-        <CardHeader>
-          <CardTitle>PII Masking</CardTitle>
-          <CardDescription>
-            Actions applied synchronously at ingest time, before logs reach ClickHouse.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {effectiveMasking.map((m) => (
-              <div key={m.key} className="flex items-center gap-4">
-                <span className="w-20 font-mono text-sm capitalize">{m.key}</span>
-                <Select value={m.action} onValueChange={(v) => v != null && updateMasking(m.key, v)}>
-                  <SelectTrigger className="w-44">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MASKING_OPTIONS.map((opt) => (
-                      <SelectItem key={opt} value={opt}>
-                        {opt === "mask" && "Mask (*** redacted ***)"}
-                        {opt === "hash" && "Hash (SHA-256)"}
-                        {opt === "drop_field" && "Drop field"}
-                        {opt === "drop_record" && "Drop record"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <span className="text-xs text-muted-foreground">
-                  {m.action === "mask" && "Replaces value with redacted placeholder"}
-                  {m.action === "hash" && "SHA-256 hex digest; reversible with known input"}
-                  {m.action === "drop_field" && "Removes the field from the record"}
-                  {m.action === "drop_record" && "Discards the entire log event"}
-                </span>
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
 
-      <Separator />
-
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saveM.isPending}>
-          {saveM.isPending ? (
-            <Loader2Icon className="mr-1.5 size-4 animate-spin" />
-          ) : (
-            <SaveIcon className="mr-1.5 size-4" />
-          )}
-          Save Settings
-        </Button>
-      </div>
-    </div>
+          <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <div>
+                <CardTitle>{t("pages.settings.transformsTitle")}</CardTitle>
+                <CardDescription>{t("pages.settings.transformsDescription")}</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRows((r) => [...r, { field: "", action: "redact" }])}
+              >
+                <PlusIcon /> {t("pages.settings.addRule")}
+              </Button>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              {rows.length === 0 && (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  {t("pages.settings.noRules")}
+                </p>
+              )}
+              {rows.map((row, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: editable rows are positional
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    className="font-mono-logs"
+                    placeholder={t("pages.settings.fieldPlaceholder")}
+                    value={row.field}
+                    onChange={(e) =>
+                      setRows((prev) =>
+                        prev.map((r, j) => (j === i ? { ...r, field: e.target.value } : r)),
+                      )
+                    }
+                  />
+                  <Select
+                    value={row.action}
+                    onValueChange={(v) =>
+                      setRows((prev) =>
+                        prev.map((r, j) => (j === i ? { ...r, action: v ?? r.action } : r)),
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-36">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ACTIONS.map((a) => (
+                        <SelectItem key={a} value={a}>
+                          {a}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t("pages.settings.removeRule")}
+                    onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
+                  >
+                    <Trash2Icon className="text-destructive" />
+                  </Button>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </DataState>
+    </>
   );
 }

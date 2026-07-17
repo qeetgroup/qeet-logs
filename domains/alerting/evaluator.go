@@ -23,6 +23,12 @@ func Evaluate(ctx context.Context, ch *clickhouse.Client, rule AlertRule) (count
 			count = int64(v)
 		case int64:
 			count = v
+		case string:
+			// ClickHouse renders 64-bit integers as JSON strings in JSONEachRow;
+			// parse defensively so counts are never silently read as zero.
+			var f float64
+			fmt.Sscanf(v, "%g", &f)
+			count = int64(f)
 		}
 	}
 

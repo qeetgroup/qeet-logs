@@ -1,0 +1,28 @@
+{
+  "name": "@qeet-logs/root",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/console"
+  ],
+  "trustedDependencies": [
+    "esbuild",
+    "lightningcss"
+  ],
+  "packageManager": "bun@1.3.14",
+  "scripts": {
+    "dev": "bun run --filter './apps/*' dev",
+    "dev:console": "bun run --filter '@qeet-logs/console' dev",
+    "build": "bun run --filter './apps/*' build",
+    "lint": "biome lint --diagnostic-level=error .",
+    "format": "biome format --write .",
+    "check": "biome check --diagnostic-level=error .",
+    "typecheck": "bun run --filter './apps/*' typecheck",
+    "test": "bun run --filter './apps/*' test",
+    "clean": "rm -rf node_modules apps/*/node_modules apps/*/dist apps/*/.output"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.3",
+    "typescript": "^7.0.2"
+  }
+}

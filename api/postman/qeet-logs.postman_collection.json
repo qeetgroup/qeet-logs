@@ -1,0 +1,1757 @@
+{
+  "info": {
+    "_postman_id": "8f3b6e10-7a3f-4d9c-9a55-qeetlogs00001",
+    "name": "Qeet Logs API (v1)",
+    "description": "Privacy-first, multi-tenant observability platform — logs, metrics, and traces.\n\nAuth: set the collection variable `apiKey` to a Qeet Logs key (e.g. `ql_live_…`); it is sent as the `X-Qeet-Api-Key` header on every request. Admin routes also accept a Qeet ID Bearer JWT.\n\nTwo hosts:\n- `apiBaseUrl` — query & admin API (default http://localhost:8100)\n- `ingestBaseUrl` — ingest gateway (default http://localhost:8101)\n\nRBAC scopes: `logs:ingest` (write), `logs:read`/`logs:query` (read), `logs:admin` (admin). Ingest requests target `{{ingestBaseUrl}}`; everything else targets `{{apiBaseUrl}}`.\n\nMirrors `api/openapi/*.yaml` — keep the two in sync when routes change.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key", "value": "X-Qeet-Api-Key", "type": "string" },
+      { "key": "value", "value": "{{apiKey}}", "type": "string" },
+      { "key": "in", "value": "header", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "apiBaseUrl", "value": "http://localhost:8100" },
+    { "key": "ingestBaseUrl", "value": "http://localhost:8101" },
+    { "key": "apiKey", "value": "ql_live_replace_me" },
+    { "key": "apiKeyId", "value": "" },
+    { "key": "alertRuleId", "value": "" },
+    { "key": "erasureId", "value": "" },
+    { "key": "dashboardId", "value": "" },
+    { "key": "savedSearchId", "value": "" },
+    { "key": "shareToken", "value": "" },
+    { "key": "dlqId", "value": "" },
+    { "key": "traceId", "value": "4bf92f3577b34da6a3ce929d0e0e4736" },
+    { "key": "incidentId", "value": "" },
+    { "key": "businessContextId", "value": "" },
+    { "key": "postmortemId", "value": "" },
+    { "key": "webhookId", "value": "" },
+    { "key": "sessionId", "value": "" },
+    { "key": "conversationId", "value": "" },
+    { "key": "provider", "value": "github" },
+    { "key": "tenantId", "value": "" }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('status is not a server error', function () {",
+          "  pm.expect(pm.response.code).to.be.below(500);",
+          "});",
+          "pm.test('responds within 5s', function () {",
+          "  pm.expect(pm.response.responseTime).to.be.below(5000);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health check — GET /healthz",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/healthz", "host": ["{{apiBaseUrl}}"], "path": ["healthz"] },
+            "description": "Liveness probe. Public."
+          }
+        },
+        {
+          "name": "Readiness — GET /readyz",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/readyz", "host": ["{{apiBaseUrl}}"], "path": ["readyz"] },
+            "description": "Readiness probe — checks Postgres, Redis, ClickHouse, NATS. 200 when all reachable, 503 otherwise."
+          }
+        },
+        {
+          "name": "Version — GET /version",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/version", "host": ["{{apiBaseUrl}}"], "path": ["version"] },
+            "description": "Binary version string. Public."
+          }
+        },
+        {
+          "name": "Metrics — GET /metrics",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/metrics", "host": ["{{apiBaseUrl}}"], "path": ["metrics"] },
+            "description": "Prometheus text exposition (RED metrics + Go runtime/process collectors). Internal scrape only — not for the public edge. No auth."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ingest",
+      "item": [
+        {
+          "name": "Ingest single log — POST /v1/ingest",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{ingestBaseUrl}}/v1/ingest", "host": ["{{ingestBaseUrl}}"], "path": ["v1", "ingest"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"service\": \"payments\",\n  \"level\": \"error\",\n  \"message\": \"stripe webhook signature mismatch\",\n  \"trace_id\": \"{{traceId}}\",\n  \"environment\": \"production\",\n  \"request_id\": \"req_xyz\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Accepts a single flat JSON object. `service` + `message` are the meaningful fields; recognised keys are promoted to typed columns, extras go to the `body` JSON column. Requires `logs:ingest`. → 202 {accepted, dropped, errors}."
+          }
+        },
+        {
+          "name": "Ingest batch (NDJSON) — POST /v1/ingest/batch",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/x-ndjson" }],
+            "url": { "raw": "{{ingestBaseUrl}}/v1/ingest/batch", "host": ["{{ingestBaseUrl}}"], "path": ["v1", "ingest", "batch"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"service\":\"api\",\"level\":\"info\",\"message\":\"request processed\"}\n{\"service\":\"api\",\"level\":\"warn\",\"message\":\"slow query\",\"duration_ms\":850}",
+              "options": { "raw": { "language": "text" } }
+            },
+            "description": "Newline-delimited JSON — one record per line. Per-line parse errors are counted in `errors` but don't abort the batch. Requires `logs:ingest`."
+          }
+        },
+        {
+          "name": "Ingest GELF — POST /v1/ingest/gelf",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{ingestBaseUrl}}/v1/ingest/gelf", "host": ["{{ingestBaseUrl}}"], "path": ["v1", "ingest", "gelf"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"1.1\",\n  \"host\": \"web-1\",\n  \"short_message\": \"user login failed\",\n  \"level\": 3,\n  \"_service\": \"auth\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Graylog Extended Log Format (GELF) JSON. `_`-prefixed fields become attributes. Requires `logs:ingest`."
+          }
+        },
+        {
+          "name": "Ingest syslog (RFC 5424) — POST /v1/ingest/syslog",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "text/plain" }],
+            "url": { "raw": "{{ingestBaseUrl}}/v1/ingest/syslog", "host": ["{{ingestBaseUrl}}"], "path": ["v1", "ingest", "syslog"] },
+            "body": {
+              "mode": "raw",
+              "raw": "<34>1 2024-01-15T10:00:00Z host authd - - - Authentication failure",
+              "options": { "raw": { "language": "text" } }
+            },
+            "description": "Raw RFC 5424 syslog line. Requires `logs:ingest`."
+          }
+        },
+        {
+          "name": "OTLP logs — POST /v1/logs",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{ingestBaseUrl}}/v1/logs", "host": ["{{ingestBaseUrl}}"], "path": ["v1", "logs"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceLogs\": [\n    {\n      \"resource\": { \"attributes\": [{ \"key\": \"service.name\", \"value\": { \"stringValue\": \"checkout\" } }] },\n      \"scopeLogs\": [{ \"logRecords\": [{ \"severityText\": \"ERROR\", \"body\": { \"stringValue\": \"payment declined\" } }] }]\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "OTLP/HTTP `ExportLogsServiceRequest` (JSON or protobuf). Also available on :4318. Requires `logs:ingest`."
+          }
+        },
+        {
+          "name": "OTLP metrics — POST /v1/metrics",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{ingestBaseUrl}}/v1/metrics", "host": ["{{ingestBaseUrl}}"], "path": ["v1", "metrics"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metric_name\": \"http_requests_total\",\n  \"metric_type\": \"sum\",\n  \"service\": \"api\",\n  \"value\": 42\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "OTLP/HTTP `ExportMetricsServiceRequest`, or a single MetricIngestRecord as shown. Requires `logs:ingest`."
+          }
+        },
+        {
+          "name": "OTLP traces — POST /v1/traces",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{ingestBaseUrl}}/v1/traces", "host": ["{{ingestBaseUrl}}"], "path": ["v1", "traces"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trace_id\": \"{{traceId}}\",\n  \"span_id\": \"00f067aa0ba902b7\",\n  \"service\": \"checkout\",\n  \"name\": \"POST /charge\",\n  \"start_time_unix_nano\": 1705312800000000000,\n  \"end_time_unix_nano\": 1705312800120000000\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "OTLP/HTTP `ExportTraceServiceRequest`, or a single SpanIngestRecord as shown. Requires `logs:ingest`."
+          }
+        },
+        {
+          "name": "Prometheus remote_write — POST /api/v1/write",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/x-protobuf" }, { "key": "Content-Encoding", "value": "snappy" }],
+            "url": { "raw": "{{ingestBaseUrl}}/api/v1/write", "host": ["{{ingestBaseUrl}}"], "path": ["api", "v1", "write"] },
+            "body": { "mode": "raw", "raw": "" },
+            "description": "Prometheus remote_write — Snappy-compressed protobuf body (not representable as raw text here; point a Prometheus `remote_write` at this URL). Requires `logs:ingest`. → 204."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Query",
+      "item": [
+        {
+          "name": "LogQL++ query — GET /v1/query",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/query?q=SELECT id, timestamp, service, level, message FROM logs WHERE level=\"error\" LIMIT 100",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "query"],
+              "query": [{ "key": "q", "value": "SELECT id, timestamp, service, level, message FROM logs WHERE level=\"error\" LIMIT 100" }]
+            },
+            "description": "LogQL++ query. Tenant predicate is injected from identity. → {columns, count, rows}. Requires `logs:read`/`logs:query`."
+          }
+        },
+        {
+          "name": "Query as CSV — GET /v1/query?format=csv",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/query?q=SEARCH \"timeout\" FROM logs LIMIT 50&format=csv",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "query"],
+              "query": [
+                { "key": "q", "value": "SEARCH \"timeout\" FROM logs LIMIT 50" },
+                { "key": "format", "value": "csv" }
+              ]
+            },
+            "description": "Same query surface; `format` may be `json` (default), `csv`, or `ndjson`."
+          }
+        },
+        {
+          "name": "Live tail (WebSocket) — GET /v1/query/tail",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Qeet-Api-Key", "value": "{{apiKey}}" }],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/query/tail?q=TAIL FROM logs WHERE level=\"error\"",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "query", "tail"],
+              "query": [{ "key": "q", "value": "TAIL FROM logs WHERE level=\"error\"" }]
+            },
+            "description": "NOTE: this endpoint upgrades to a WebSocket — use Postman's WebSocket request type (or a WS client) against this URL; newman cannot drive it. Supply a `TAIL FROM logs [WHERE …]` statement via `q`; each matching record arrives as a JSON text frame. Requires `logs:read`/`logs:query`."
+          }
+        },
+        {
+          "name": "Natural-language query — POST /v1/query/nl",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/query/nl", "host": ["{{apiBaseUrl}}"], "path": ["v1", "query", "nl"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"show me payment errors in the last hour\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Free text → LogQL++ via Claude. → {loqlpp, explanation}. Returns 501 if ANTHROPIC_API_KEY is unset. Requires `logs:read`."
+          }
+        },
+        {
+          "name": "Auth events — GET /v1/auth-events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/auth-events", "host": ["{{apiBaseUrl}}"], "path": ["v1", "auth-events"] },
+            "description": "Qeet ID auth-event stream for the tenant. Requires `logs:read`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "PromQL",
+      "item": [
+        {
+          "name": "Instant query — GET /api/v1/query",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/api/v1/query?query=rate(http_requests_total[5m])",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["api", "v1", "query"],
+              "query": [{ "key": "query", "value": "rate(http_requests_total[5m])" }]
+            },
+            "description": "Prometheus-compatible instant query (Grafana Prometheus data source works unchanged). Requires `logs:read`."
+          }
+        },
+        {
+          "name": "Range query — GET /api/v1/query_range",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/api/v1/query_range?query=rate(http_requests_total[5m])&start=1705312800&end=1705316400&step=60",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["api", "v1", "query_range"],
+              "query": [
+                { "key": "query", "value": "rate(http_requests_total[5m])" },
+                { "key": "start", "value": "1705312800" },
+                { "key": "end", "value": "1705316400" },
+                { "key": "step", "value": "60" }
+              ]
+            },
+            "description": "Prometheus-compatible range query. Requires `logs:read`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Changes",
+      "item": [
+        {
+          "name": "Record change event — POST /v1/changes",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/changes", "host": ["{{apiBaseUrl}}"], "path": ["v1", "changes"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"deploy\",\n  \"service\": \"payments\",\n  \"environment\": \"production\",\n  \"git_sha\": \"a1b2c3d\",\n  \"deploy_id\": \"deploy-42\",\n  \"pr_number\": \"128\",\n  \"author\": \"jane\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Record a deploy/flag/config/rollback event for the timeline, RCA, and alert correlation. Requires `logs:ingest`."
+          }
+        },
+        {
+          "name": "List change events — GET /v1/changes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/changes?service=payments&kind=deploy&limit=50",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "changes"],
+              "query": [
+                { "key": "service", "value": "payments" },
+                { "key": "kind", "value": "deploy" },
+                { "key": "limit", "value": "50" }
+              ]
+            },
+            "description": "List change events. Requires `logs:read`."
+          }
+        },
+        {
+          "name": "Provider webhook — POST /v1/changes/{provider}",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-GitHub-Event", "value": "deployment", "description": "GitHub event type (github provider only)." }
+            ],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/changes/{{provider}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "changes", "{{provider}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deployment\": {\n    \"id\": 42,\n    \"sha\": \"a1b2c3d\",\n    \"ref\": \"refs/heads/main\",\n    \"environment\": \"production\",\n    \"creator\": { \"login\": \"jane\" }\n  },\n  \"repository\": { \"name\": \"payments\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Ingest a raw CI/CD / flag / config webhook as normalized change events. `provider` = github|gitlab|launchdarkly (`ld`); GitHub carries the event type in `X-GitHub-Event`. Requires `logs:ingest`. → 201 {accepted, ids} or 200 {accepted:0} for non-actionable payloads."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Investigation",
+      "item": [
+        {
+          "name": "Topology — GET /v1/topology",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/topology", "host": ["{{apiBaseUrl}}"], "path": ["v1", "topology"] },
+            "description": "Service dependency graph + blast radius. Requires `logs:read`."
+          }
+        },
+        {
+          "name": "Timeline — GET /v1/timeline",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/timeline?trace_id={{traceId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "timeline"],
+              "query": [{ "key": "trace_id", "value": "{{traceId}}" }]
+            },
+            "description": "Unified cross-signal investigation timeline. Use `?trace_id=` for one request, or `?service=&since=` for a service. Requires `logs:read`."
+          }
+        },
+        {
+          "name": "Incidents — GET /v1/incidents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/incidents", "host": ["{{apiBaseUrl}}"], "path": ["v1", "incidents"] },
+            "description": "Correlated incident feed. Requires `logs:read`."
+          }
+        },
+        {
+          "name": "RCA — GET /v1/rca",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/rca?incident_id={{incidentId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "rca"],
+              "query": [{ "key": "incident_id", "value": "{{incidentId}}" }]
+            },
+            "description": "Root-cause candidates for an incident. Requires `logs:read`."
+          }
+        },
+        {
+          "name": "Overlays — GET /v1/overlays",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/overlays", "host": ["{{apiBaseUrl}}"], "path": ["v1", "overlays"] },
+            "description": "Dashboard correlation markers. Requires `logs:read`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public / Shared",
+      "item": [
+        {
+          "name": "Read shared dashboard — GET /shared/dashboards/{token}",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/shared/dashboards/{{shareToken}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["shared", "dashboards", "{{shareToken}}"]
+            },
+            "description": "Public, seat-free read of a shared dashboard by its share token (minted via Admin → Dashboards → Share). No auth."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — API Keys",
+      "item": [
+        {
+          "name": "Create API key — POST /v1/admin/api-keys",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('apiKeyId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/api-keys", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "api-keys"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ci-ingest\",\n  \"scopes\": [\"logs:ingest\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a tenant API key. The full key value is returned once. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "List API keys — GET /v1/admin/api-keys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/api-keys", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "api-keys"] },
+            "description": "List the tenant's API keys (key values redacted). Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Revoke API key — DELETE /v1/admin/api-keys/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/api-keys/{{apiKeyId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "api-keys", "{{apiKeyId}}"]
+            },
+            "description": "Revoke a key by id. Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Alert Rules",
+      "item": [
+        {
+          "name": "Create alert rule — POST /v1/admin/alert-rules",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('alertRuleId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/alert-rules", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "alert-rules"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"payment error spike\",\n  \"kind\": \"threshold\",\n  \"query\": \"service=\\\"payments\\\" | level=\\\"error\\\"\",\n  \"threshold_count\": 10,\n  \"window_minutes\": 5,\n  \"channels\": [{ \"type\": \"webhook\", \"target\": \"https://hooks.example.com/alerts\" }]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a threshold/absence alert rule. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "List alert rules — GET /v1/admin/alert-rules",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/alert-rules", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "alert-rules"] },
+            "description": "List alert rules. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Delete alert rule — DELETE /v1/admin/alert-rules/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/alert-rules/{{alertRuleId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "alert-rules", "{{alertRuleId}}"]
+            },
+            "description": "Delete an alert rule by id. Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Retention",
+      "item": [
+        {
+          "name": "Get retention — GET /v1/admin/retention",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/retention", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "retention"] },
+            "description": "Get the tenant's retention config. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Update retention — PUT /v1/admin/retention",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/retention", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "retention"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"retention_days\": 30,\n  \"pii_mask_fields\": { \"email\": \"hash\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Set retention days (1–365) and per-field PII masking. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Retention cost — GET /v1/admin/retention/cost",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/retention/cost", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "retention", "cost"] },
+            "description": "Cost-transparent steady-state storage estimate per signal + what-if alternative windows (Module 6.4). Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Transform",
+      "item": [
+        {
+          "name": "Get transform — GET /v1/admin/transform",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/transform", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "transform"] },
+            "description": "Get the tenant's remap/transform program. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Upsert transform — PUT /v1/admin/transform",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/transform", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "transform"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program\": \"redact .password\\nif .level == \\\"debug\\\" del .stack\",\n  \"enabled\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Upsert the VRL-inspired per-tenant remap program (applied pre-storage). Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Erasure",
+      "item": [
+        {
+          "name": "Create erasure request — POST /v1/admin/erasure",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('erasureId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/erasure", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "erasure"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_linkage_key\": \"3f8a…\",\n  \"time_from\": \"2024-01-01T00:00:00Z\",\n  \"time_to\": \"2024-02-01T00:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Submit a DPDP/GDPR data-subject erasure request (async ClickHouse mutations). At least one of `user_linkage_key` or `time_from`/`time_to` required. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "List erasure requests — GET /v1/admin/erasure",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/erasure", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "erasure"] },
+            "description": "List prior erasure requests (most recent first). Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Dashboards",
+      "item": [
+        {
+          "name": "Create dashboard — POST /v1/admin/dashboards",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('dashboardId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/dashboards", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "dashboards"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Payments overview\",\n  \"panels\": [\n    { \"id\": \"p1\", \"kind\": \"stat\", \"title\": \"Error rate\", \"query\": \"SELECT count() FROM logs WHERE level=\\\"error\\\"\" }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a dashboard with panels (LogQL++/PromQL queries). Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "List dashboards — GET /v1/admin/dashboards",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/dashboards", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "dashboards"] },
+            "description": "List dashboards. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Get dashboard — GET /v1/admin/dashboards/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/dashboards/{{dashboardId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "dashboards", "{{dashboardId}}"]
+            },
+            "description": "Get one dashboard by id. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Update dashboard — PUT /v1/admin/dashboards/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/dashboards/{{dashboardId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "dashboards", "{{dashboardId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Payments overview (v2)\",\n  \"panels\": []\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Replace a dashboard. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Delete dashboard — DELETE /v1/admin/dashboards/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/dashboards/{{dashboardId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "dashboards", "{{dashboardId}}"]
+            },
+            "description": "Delete a dashboard by id. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Share dashboard — POST /v1/admin/dashboards/{id}/share",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.share_token) pm.collectionVariables.set('shareToken', b.share_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/dashboards/{{dashboardId}}/share",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "dashboards", "{{dashboardId}}", "share"]
+            },
+            "description": "Mint a public share token for a dashboard (usable at Public / Shared). Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Saved Searches",
+      "item": [
+        {
+          "name": "Create saved search — POST /v1/admin/saved-searches",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('savedSearchId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/saved-searches", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "saved-searches"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Prod errors\",\n  \"query\": \"SELECT * FROM logs WHERE level=\\\"error\\\" AND environment=\\\"production\\\"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a saved LogQL++ search. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "List saved searches — GET /v1/admin/saved-searches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/saved-searches", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "saved-searches"] },
+            "description": "List saved searches. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Delete saved search — DELETE /v1/admin/saved-searches/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/saved-searches/{{savedSearchId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "saved-searches", "{{savedSearchId}}"]
+            },
+            "description": "Delete a saved search by id. Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Audit",
+      "item": [
+        {
+          "name": "List audit entries — GET /v1/admin/audit",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/audit?limit=50",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "audit"],
+              "query": [{ "key": "limit", "value": "50" }]
+            },
+            "description": "Tamper-evident audit log of queries and admin actions. Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — DLQ",
+      "item": [
+        {
+          "name": "List DLQ — GET /v1/admin/dlq",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/dlq", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "dlq"] },
+            "description": "List dead-lettered ingest events. Copy an id into the `dlqId` variable to replay/drop. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Replay DLQ event — POST /v1/admin/dlq/{id}/replay",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/dlq/{{dlqId}}/replay",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "dlq", "{{dlqId}}", "replay"]
+            },
+            "description": "Re-submit a dead-lettered event for processing. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Drop DLQ event — DELETE /v1/admin/dlq/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/dlq/{{dlqId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "dlq", "{{dlqId}}"]
+            },
+            "description": "Permanently drop a dead-lettered event. Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Quota",
+      "item": [
+        {
+          "name": "Quota usage — GET /v1/admin/quota/usage",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/quota/usage", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "quota", "usage"] },
+            "description": "Calendar-month event count and estimated bytes. Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Deploy",
+      "item": [
+        {
+          "name": "Deploy culprits — GET /v1/deploy/culprits",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/deploy/culprits?service=payments&since=3600",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "deploy", "culprits"],
+              "query": [
+                { "key": "service", "value": "payments" },
+                { "key": "since", "value": "3600" }
+              ]
+            },
+            "description": "Ranked deploy/change culprits for a service (recency × change-type × before/after error-rate delta). Supply `service` or `incident_id`. Requires `logs:read`/`logs:query`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Business Context",
+      "item": [
+        {
+          "name": "By service — GET /v1/business-context",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/business-context?service=payments",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "business-context"],
+              "query": [{ "key": "service", "value": "payments" }]
+            },
+            "description": "Business-context mappings + derived exposure for a service. Requires `logs:read`/`logs:query`."
+          }
+        },
+        {
+          "name": "Incident exposure — GET /v1/incidents/{id}/context",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/incidents/{{incidentId}}/context",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "incidents", "{{incidentId}}", "context"]
+            },
+            "description": "Business exposure for an incident (resolves its service). Requires `logs:read`/`logs:query`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Export",
+      "item": [
+        {
+          "name": "Export query — GET /v1/export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/export?q=SELECT * FROM logs WHERE level=\"error\" LIMIT 1000&format=csv",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "export"],
+              "query": [
+                { "key": "q", "value": "SELECT * FROM logs WHERE level=\"error\" LIMIT 1000" },
+                { "key": "format", "value": "csv" }
+              ]
+            },
+            "description": "Bulk/programmatic export as a downloadable file (json|csv|ndjson). Requires `logs:export`/`logs:read`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Alerts",
+      "item": [
+        {
+          "name": "Simulate routing — POST /v1/alerts/simulate",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/alerts/simulate", "host": ["{{apiBaseUrl}}"], "path": ["v1", "alerts", "simulate"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"service\": \"payments\",\n  \"severity\": \"error\",\n  \"labels\": { \"region\": \"ap-south-1\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Which alert rules/channels WOULD fire for a synthetic event (no ClickHouse, no delivery). Requires `logs:read`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "TTFIQ — GET /v1/analytics/ttfiq",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/analytics/ttfiq", "host": ["{{apiBaseUrl}}"], "path": ["v1", "analytics", "ttfiq"] },
+            "description": "Time To First Independent Query adoption analytic + cohort median. Requires `logs:read`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Forecast",
+      "item": [
+        {
+          "name": "Forecast — GET /v1/forecast",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/forecast?service=payments&metric=cpu_usage&window=300&horizon=12",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "forecast"],
+              "query": [
+                { "key": "service", "value": "payments" },
+                { "key": "metric", "value": "cpu_usage" },
+                { "key": "window", "value": "300" },
+                { "key": "horizon", "value": "12" },
+                { "key": "threshold", "value": "0.9", "disabled": true }
+              ]
+            },
+            "description": "Statistical capacity/exhaustion forecast + seasonal baseline (deploy-aware). Requires `logs:read`/`logs:query`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Copilot",
+      "item": [
+        {
+          "name": "Single-shot — POST /v1/query/copilot",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/query/copilot", "host": ["{{apiBaseUrl}}"], "path": ["v1", "query", "copilot"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"why did payments error rate spike after the last deploy?\",\n  \"context\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Governed LLM copilot → {loqlpp, explanation}. 403 unless the tenant opted in (admin AI Features); 501 if ANTHROPIC_API_KEY unset. Requires `logs:query`."
+          }
+        },
+        {
+          "name": "Start conversation — POST /v1/query/copilot/conversations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('conversationId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/query/copilot/conversations", "host": ["{{apiBaseUrl}}"], "path": ["v1", "query", "copilot", "conversations"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"payments incident\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a durable multi-turn copilot conversation. Requires `logs:query` + tenant opt-in."
+          }
+        },
+        {
+          "name": "Get conversation — GET /v1/query/copilot/conversations/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/query/copilot/conversations/{{conversationId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "query", "copilot", "conversations", "{{conversationId}}"]
+            },
+            "description": "Return a conversation's turn history. Requires `logs:query` + tenant opt-in."
+          }
+        },
+        {
+          "name": "Post message — POST /v1/query/copilot/conversations/{id}/messages",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/query/copilot/conversations/{{conversationId}}/messages",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "query", "copilot", "conversations", "{{conversationId}}", "messages"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"now narrow it to checkout only\",\n  \"context\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Add a turn; replays history through the governed pipeline. 501 if ANTHROPIC_API_KEY unset."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Loki",
+      "item": [
+        {
+          "name": "Range query — GET /loki/api/v1/query_range",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/loki/api/v1/query_range?query={service=\"payments\", level!=\"debug\"}&direction=backward&limit=1000",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["loki", "api", "v1", "query_range"],
+              "query": [
+                { "key": "query", "value": "{service=\"payments\", level!=\"debug\"}" },
+                { "key": "direction", "value": "backward" },
+                { "key": "limit", "value": "1000" }
+              ]
+            },
+            "description": "Grafana Loki-compatible range query → streams result. Point a Grafana Loki data source here. Requires `logs:read`/`logs:query`."
+          }
+        },
+        {
+          "name": "Labels — GET /loki/api/v1/labels",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/loki/api/v1/labels", "host": ["{{apiBaseUrl}}"], "path": ["loki", "api", "v1", "labels"] },
+            "description": "Browsable Loki label keys (static). Requires `logs:read`/`logs:query`."
+          }
+        },
+        {
+          "name": "Label values — GET /loki/api/v1/label/{name}/values",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/loki/api/v1/label/service/values",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["loki", "api", "v1", "label", "service", "values"]
+            },
+            "description": "Distinct values for one label (tenant-scoped DISTINCT). Requires `logs:read`/`logs:query`."
+          }
+        },
+        {
+          "name": "Series — GET /loki/api/v1/series",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/loki/api/v1/series?match[]={service=\"payments\"}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["loki", "api", "v1", "series"],
+              "query": [{ "key": "match[]", "value": "{service=\"payments\"}" }]
+            },
+            "description": "Distinct label-set combinations matching the selectors. Requires `logs:read`/`logs:query`."
+          }
+        },
+        {
+          "name": "Build info — GET /loki/api/v1/status/buildinfo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/loki/api/v1/status/buildinfo", "host": ["{{apiBaseUrl}}"], "path": ["loki", "api", "v1", "status", "buildinfo"] },
+            "description": "Static Loki-compatible build info for Grafana health/feature detection. Behind API-key middleware."
+          }
+        }
+      ]
+    },
+    {
+      "name": "ChatOps (Slack)",
+      "item": [
+        {
+          "name": "Install — GET /v1/chatops/slack/install",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/chatops/slack/install?tenant={{tenantId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "chatops", "slack", "install"],
+              "query": [{ "key": "tenant", "value": "{{tenantId}}" }]
+            },
+            "description": "Begin Slack OAuth (redirects to Slack). Slack-driven, not API-key auth. 501 until SLACK_CLIENT_ID is set."
+          }
+        },
+        {
+          "name": "OAuth callback — GET /v1/chatops/slack/callback",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/chatops/slack/callback?code=xxx&state={{tenantId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "chatops", "slack", "callback"],
+              "query": [
+                { "key": "code", "value": "xxx" },
+                { "key": "state", "value": "{{tenantId}}" }
+              ]
+            },
+            "description": "Slack OAuth redirect callback — persists the workspace→tenant install. Called by Slack. 501 until Slack client secret is set."
+          }
+        },
+        {
+          "name": "Slash command — POST /v1/chatops/slack/commands",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" },
+              { "key": "X-Slack-Request-Timestamp", "value": "0" },
+              { "key": "X-Slack-Signature", "value": "v0=unsigned" }
+            ],
+            "url": { "raw": "{{apiBaseUrl}}/v1/chatops/slack/commands", "host": ["{{apiBaseUrl}}"], "path": ["v1", "chatops", "slack", "commands"] },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "team_id", "value": "T0000000000" },
+                { "key": "command", "value": "/qeetlogs" },
+                { "key": "text", "value": "incidents" }
+              ]
+            },
+            "description": "Slack slash-command. Auth is Slack's request signature (X-Slack-Signature / -Request-Timestamp, HMAC over v0:{ts}:{body}), NOT the Qeet API key. 401 without a valid signature; 501 until SLACK_SIGNING_SECRET is set."
+          }
+        },
+        {
+          "name": "Interactivity — POST /v1/chatops/slack/interactivity",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" },
+              { "key": "X-Slack-Request-Timestamp", "value": "0" },
+              { "key": "X-Slack-Signature", "value": "v0=unsigned" }
+            ],
+            "url": { "raw": "{{apiBaseUrl}}/v1/chatops/slack/interactivity", "host": ["{{apiBaseUrl}}"], "path": ["v1", "chatops", "slack", "interactivity"] },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [{ "key": "payload", "value": "{}" }]
+            },
+            "description": "Slack Block Kit interactivity callback. Slack-signature auth. 401 without a valid signature; 501 until SLACK_SIGNING_SECRET is set."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Business Context",
+      "item": [
+        {
+          "name": "Create mapping — POST /v1/admin/business-context",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('businessContextId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/business-context", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "business-context"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"service\": \"payments\",\n  \"customer\": \"Acme Corp\",\n  \"plan_tier\": \"enterprise\",\n  \"monthly_revenue\": 12000,\n  \"sla_target\": 99.9,\n  \"owner\": \"payments-team\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Map a service to customer/plan/revenue/SLA. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "List mappings — GET /v1/admin/business-context",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/business-context", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "business-context"] },
+            "description": "List business-context mappings. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Delete mapping — DELETE /v1/admin/business-context/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/business-context/{{businessContextId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "business-context", "{{businessContextId}}"]
+            },
+            "description": "Delete a mapping by id. Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Postmortems",
+      "item": [
+        {
+          "name": "Create postmortem — POST /v1/admin/postmortems",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('postmortemId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/postmortems", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "postmortems"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incident_id\": null,\n  \"title\": \"Payments outage 2026-07-16\",\n  \"summary\": \"Checkout errors after deploy-42\",\n  \"timeline\": \"14:00 deploy · 14:05 error spike · 14:20 rollback\",\n  \"root_cause\": \"bad config in deploy-42\",\n  \"impact\": \"~20 min elevated checkout errors\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a postmortem (Module 20). Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "List postmortems — GET /v1/admin/postmortems",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/postmortems", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "postmortems"] },
+            "description": "List postmortems. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Get postmortem — GET /v1/admin/postmortems/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/postmortems/{{postmortemId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "postmortems", "{{postmortemId}}"]
+            },
+            "description": "Get one postmortem. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Update postmortem — PATCH /v1/admin/postmortems/{id}",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/postmortems/{{postmortemId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "postmortems", "{{postmortemId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"published\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Partial update; publishing stamps published_at. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Create commitment — POST /v1/admin/postmortems/{id}/commitments",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/postmortems/{{postmortemId}}/commitments",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "postmortems", "{{postmortemId}}", "commitments"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Add config validation to the deploy pipeline\",\n  \"due_date\": \"2026-08-01\",\n  \"status\": \"open\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Add a remediation commitment. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "List commitments — GET /v1/admin/postmortems/{id}/commitments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/postmortems/{{postmortemId}}/commitments",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "postmortems", "{{postmortemId}}", "commitments"]
+            },
+            "description": "List a postmortem's remediation commitments. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "CERT-In export — GET /v1/admin/postmortems/{id}/cert-in-export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/postmortems/{{postmortemId}}/cert-in-export",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "postmortems", "{{postmortemId}}", "cert-in-export"]
+            },
+            "description": "CERT-In 6-hour incident report from the postmortem + linked incident (Module 27.2). Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — AI Features",
+      "item": [
+        {
+          "name": "Get AI features — GET /v1/admin/ai-features",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/ai-features", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "ai-features"] },
+            "description": "Tenant AI opt-in state. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Update AI features — PUT /v1/admin/ai-features",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/ai-features", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "ai-features"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ai_features_enabled\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Partial toggle of AI opt-in flags. Enabling the copilot never implies training consent. Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — ChatOps",
+      "item": [
+        {
+          "name": "Test delivery — POST /v1/admin/chatops/test",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/chatops/test", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "chatops", "test"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"slack\",\n  \"webhook_url\": \"https://hooks.slack.com/services/T000/B000/xxxx\",\n  \"title\": \"Test alert\",\n  \"service\": \"payments\",\n  \"severity\": \"high\",\n  \"message\": \"This is a Qeet Logs ChatOps test.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Format + POST a sample notification to a Slack/Teams incoming webhook (one-way). Requires `logs:admin`. → {delivered, upstream_status} or 502."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Billing",
+      "item": [
+        {
+          "name": "Get plan — GET /v1/admin/plan",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/plan", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "plan"] },
+            "description": "Tenant billing plan + allowances (free plan default). Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Set plan — PUT /v1/admin/plan",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/plan", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "plan"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"pro\",\n  \"included_events\": 50000000,\n  \"included_gb\": 100,\n  \"overage_per_million_events\": 0.5,\n  \"overage_per_gb\": 0.1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Upsert plan + allowances + overage rates. plan ∈ free|pro|enterprise. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Invoice preview — GET /v1/admin/billing/preview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/billing/preview", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "billing", "preview"] },
+            "description": "Computed overage preview for the current calendar month (preview only — no charge). Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — RCA Feedback",
+      "item": [
+        {
+          "name": "Submit RCA label — POST /v1/admin/rca/feedback",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/rca/feedback", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "rca", "feedback"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incident_id\": \"{{incidentId}}\",\n  \"candidate_subject\": \"deploy-42\",\n  \"candidate_type\": \"deploy\",\n  \"was_root_cause\": true,\n  \"note\": \"confirmed by rollback\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Label an RCA candidate (training corpus for the deferred learned ranker, Module 11.2). Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Webhooks",
+      "item": [
+        {
+          "name": "Create webhook — POST /v1/admin/webhooks",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('webhookId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/webhooks", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "webhooks"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://hooks.example.com/qeet-logs\",\n  \"events\": [\"incident.opened\", \"incident.resolved\"],\n  \"secret\": \"whsec_xxx\",\n  \"description\": \"pager bridge\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Register an outbound webhook endpoint (Module 30.4). Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "List webhooks — GET /v1/admin/webhooks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/webhooks", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "webhooks"] },
+            "description": "List webhook endpoints (secrets redacted). Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Delete webhook — DELETE /v1/admin/webhooks/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/webhooks/{{webhookId}}",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "webhooks", "{{webhookId}}"]
+            },
+            "description": "Delete a webhook endpoint by id. Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Incidents",
+      "item": [
+        {
+          "name": "Incident feedback — POST /v1/admin/incidents/{id}/feedback",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/incidents/{{incidentId}}/feedback",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "incidents", "{{incidentId}}", "feedback"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"verdict\": \"actionable\",\n  \"note\": \"real payment outage\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Operator verdict (actionable|noise) → continuous calibration (Module 13.3). Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — War Room",
+      "item": [
+        {
+          "name": "Declare — POST /v1/admin/incidents/{id}/declare",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('sessionId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/incidents/{{incidentId}}/declare",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "incidents", "{{incidentId}}", "declare"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commander\": \"jane\",\n  \"summary\": \"payments checkout errors\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Open (or return the open) war-room session for an incident (Module 18.1). Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Get session — GET /v1/admin/incidents/{id}/session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/incidents/{{incidentId}}/session",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "incidents", "{{incidentId}}", "session"]
+            },
+            "description": "Open session + timeline entries + roles. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Add entry — POST /v1/admin/sessions/{id}/entries",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/sessions/{{sessionId}}/entries",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "sessions", "{{sessionId}}", "entries"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"action\",\n  \"author\": \"jane\",\n  \"body\": \"rolled back deploy-42\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Append a war-room timeline entry. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Assign role — POST /v1/admin/sessions/{id}/roles",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/sessions/{{sessionId}}/roles",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "sessions", "{{sessionId}}", "roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"incident_commander\",\n  \"assignee\": \"jane\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Assign/update an incident command role. Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Handoff — POST /v1/admin/sessions/{id}/handoff",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v1/admin/sessions/{{sessionId}}/handoff",
+              "host": ["{{apiBaseUrl}}"],
+              "path": ["v1", "admin", "sessions", "{{sessionId}}", "handoff"]
+            },
+            "description": "Assemble the post-incident handoff and resolve the session. Requires `logs:admin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Notify",
+      "item": [
+        {
+          "name": "Get notify locale — GET /v1/admin/notify-locale",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/notify-locale", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "notify-locale"] },
+            "description": "Tenant default alert locale + supported locales (Module 27.5). Requires `logs:admin`."
+          }
+        },
+        {
+          "name": "Set notify locale — PUT /v1/admin/notify-locale",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{apiBaseUrl}}/v1/admin/notify-locale", "host": ["{{apiBaseUrl}}"], "path": ["v1", "admin", "notify-locale"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"default_locale\": \"hi\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Set the tenant default alert locale (422 if Qeet Notify can't render it). Requires `logs:admin`."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,16 +1,38 @@
 //! qeet-logs ClickHouse writer.
 //!
-//! Consumes the `qeet-logs.{tenant}.logs` JetStream work queue, batches records
-//! (up to 100 / 2s), batch-inserts them into ClickHouse (JSONEachRow, with an
-//! insert-deduplication token for idempotency on redelivery), publishes each
-//! record to the Redis `tail.{tenant}.{service}` channel for live tail, then
-//! acks. On insert failure messages are left unacked and redelivered.
+//! Consumes the `qeet-logs.>` JetStream work queue (logs / metrics / traces),
+//! batches records (up to 100 / 2s), routes each by subject to its ClickHouse
+//! table, and batch-inserts them (JSONEachRow, with an insert-deduplication
+//! token per table for idempotency on redelivery). Log records are also
+//! published to the Redis `tail.{tenant}.{service}` channel for live tail.
+//! Messages are acked only when every table's insert in the batch succeeds;
+//! otherwise they are left unacked and JetStream redelivers them.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use async_nats::jetstream::consumer::{pull::Config as PullConfig, AckPolicy};
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
+
+/// Per-target-table accumulation within one consumed batch.
+#[derive(Default)]
+struct Group {
+    ndjson: String,
+    ids: Vec<String>,
+    /// Live-tail fan-out payloads (logs only): (tenant, service, payload).
+    tail: Vec<(String, String, Vec<u8>)>,
+}
+
+/// Map a NATS subject `qeet-logs.{tenant}.{signal}` to its ClickHouse table.
+fn signal_table(subject: &str) -> Option<&'static str> {
+    match subject.rsplit('.').next() {
+        Some("logs") => Some("logs"),
+        Some("metrics") => Some("metrics"),
+        Some("traces") => Some("traces"),
+        _ => None,
+    }
+}
 
 const BATCH_MAX: usize = 100;
 const BATCH_WAIT: Duration = Duration::from_secs(2);
@@ -37,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
     let stream = js
         .get_or_create_stream(async_nats::jetstream::stream::Config {
             name: "QEET_LOGS".to_string(),
-            subjects: vec!["qeet-logs.*.logs".to_string()],
+            subjects: vec!["qeet-logs.>".to_string()],
             retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
             max_age: Duration::from_secs(24 * 3600),
             ..Default::default()
@@ -75,12 +97,14 @@ async fn main() -> anyhow::Result<()> {
             continue;
         }
 
-        // Build the NDJSON insert body and collect (tenant, service, payload)
-        // for live-tail fan-out + the dedup token from record ids.
-        let mut ndjson = String::new();
-        let mut tail: Vec<(String, String, Vec<u8>)> = Vec::new();
-        let mut ids: Vec<String> = Vec::new();
+        // Route each message to its target table by subject, accumulating a
+        // per-table NDJSON body, dedup ids, and (logs only) live-tail payloads.
+        let mut groups: HashMap<&'static str, Group> = HashMap::new();
         for m in &msgs {
+            let Some(table) = signal_table(&m.subject) else {
+                tracing::warn!(subject = %m.subject, "skipping message on unknown subject");
+                continue;
+            };
             let v: serde_json::Value = match serde_json::from_slice(&m.payload) {
                 Ok(v) => v,
                 Err(e) => {
@@ -88,56 +112,72 @@ async fn main() -> anyhow::Result<()> {
                     continue;
                 }
             };
-            let tenant = v.get("tenant_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-            let service = v.get("service").and_then(|x| x.as_str()).unwrap_or("unknown").to_string();
+            let g = groups.entry(table).or_default();
             if let Some(id) = v.get("id").and_then(|x| x.as_str()) {
-                ids.push(id.to_string());
+                g.ids.push(id.to_string());
             }
-            ndjson.push_str(&String::from_utf8_lossy(&m.payload));
-            ndjson.push('\n');
-            tail.push((tenant, service, m.payload.to_vec()));
+            g.ndjson.push_str(&String::from_utf8_lossy(&m.payload));
+            g.ndjson.push('\n');
+            if table == "logs" {
+                let tenant = v.get("tenant_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let service = v.get("service").and_then(|x| x.as_str()).unwrap_or("unknown").to_string();
+                g.tail.push((tenant, service, m.payload.to_vec()));
+            }
         }
 
-        let token = dedup_token(&mut ids);
-        match insert(&http, &ch_url, &ch_db, &ch_user, &ch_pass, &token, ndjson).await {
-            Ok(()) => {
-                for (tenant, service, payload) in &tail {
-                    let channel = format!("tail.{tenant}.{service}");
-                    let _: Result<i64, _> = redis::cmd("PUBLISH")
-                        .arg(&channel)
-                        .arg(payload.as_slice())
-                        .query_async(&mut redis)
-                        .await;
-                }
-                for m in &msgs {
-                    if let Err(e) = m.ack().await {
-                        tracing::warn!(error = %e, "ack failed");
+        // Insert every table; ack the whole batch only if all succeed.
+        let mut all_ok = true;
+        let mut inserted = 0usize;
+        for (table, g) in &mut groups {
+            let token = dedup_token(&mut g.ids);
+            match insert(&http, &ch_url, &ch_db, &ch_user, &ch_pass, table, &token, g.ndjson.clone()).await {
+                Ok(()) => {
+                    inserted += g.ids.len().max(1);
+                    for (tenant, service, payload) in &g.tail {
+                        let channel = format!("tail.{tenant}.{service}");
+                        let _: Result<i64, _> = redis::cmd("PUBLISH")
+                            .arg(&channel)
+                            .arg(payload.as_slice())
+                            .query_async(&mut redis)
+                            .await;
                     }
                 }
-                tracing::info!(count = msgs.len(), "inserted batch");
-            }
-            Err(e) => {
-                // Leave messages unacked → JetStream redelivers them.
-                tracing::error!(error = %e, count = msgs.len(), "insert failed; will retry");
+                Err(e) => {
+                    all_ok = false;
+                    tracing::error!(error = %e, table = %table, "insert failed; will retry batch");
+                }
             }
         }
+
+        if all_ok {
+            for m in &msgs {
+                if let Err(e) = m.ack().await {
+                    tracing::warn!(error = %e, "ack failed");
+                }
+            }
+            tracing::info!(count = inserted, tables = groups.len(), "inserted batch");
+        }
+        // else: leave messages unacked → JetStream redelivers the whole batch.
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert(
     http: &reqwest::Client,
     ch_url: &str,
     db: &str,
     user: &str,
     pass: &str,
+    table: &str,
     token: &str,
     ndjson: String,
 ) -> anyhow::Result<()> {
+    let insert_query = format!("INSERT INTO {table} FORMAT JSONEachRow");
     let mut req = http
         .post(format!("{ch_url}/"))
         .query(&[
             ("database", db),
-            ("query", "INSERT INTO logs FORMAT JSONEachRow"),
+            ("query", insert_query.as_str()),
             ("date_time_input_format", "best_effort"),
             ("insert_deduplication_token", token),
         ])

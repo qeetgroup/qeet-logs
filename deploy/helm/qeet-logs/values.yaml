@@ -54,6 +54,32 @@ alerter:
       cpu: 200m
       memory: 128Mi
 
+# ─── Lifecycle (cold-tier storage mover) ──────────────────────────────────────
+# Singleton background worker (PRD Module 6 / P2-G2): on an interval it snapshots
+# ClickHouse system.parts, reads per-tenant tier config from Postgres, and moves
+# aged partitions hot→cold. No Service and no HPA — exactly one instance must run.
+# Reads DATABASE_URL + CLICKHOUSE_* from the shared secret; the image is built by
+# the release workflow (matrix service `lifecycle`).
+lifecycle:
+  enabled: true
+  image:
+    repository: ghcr.io/qeetgroup/qeet-logs-lifecycle
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1  # singleton — only one mover should run
+
+  # Snapshot→plan→move interval (Go duration string). Empty ⇒ binary default (6h).
+  interval: "6h"
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
 # ─── Ingest Gateway (Rust) ────────────────────────────────────────────────────
 ingest:
   image:
@@ -82,6 +108,32 @@ ingest:
     maxReplicas: 20
     targetCPUUtilizationPercentage: 60
 
+# ─── OTel Collector DaemonSet (K8s auto-discovery — PRD Module 01.3 / 04.1) ────
+# The power-user / fleet ingestion path (disabled by default; the zero-config
+# SDKs pointing at the gateway are the default onboarding path). When enabled it
+# tails every pod log on each node and forwards logs/metrics/traces over OTLP to
+# the ingest gateway. Requires INGEST_API_KEY in the secret.
+#
+# ⚠️  IMAGE IS NOT PUBLISHED BY THE RELEASE WORKFLOW. Unlike the other five images
+#     (query/alerter/lifecycle/mcp/ingest, built by .github/workflows/release.yml),
+#     the collector is a custom OpenTelemetry Collector distribution built with the
+#     OCB builder-config under deploy/otel-collector. You must build and push
+#     `qeet-logs-collector` yourself before setting `collector.enabled: true`, or
+#     pods will ImagePullBackOff on a tag that does not exist.
+collector:
+  enabled: false
+  image:
+    repository: ghcr.io/qeetgroup/qeet-logs-collector
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 # ─── Ingress ──────────────────────────────────────────────────────────────────
 ingress:
   enabled: true
@@ -106,21 +158,37 @@ ingress:
         - ingest.logs.qeet.in
 
 # ─── Secrets (populated externally — do not put real values here) ─────────────
+# The Secret is provisioned out-of-band (sealed-secrets / external-secrets / SOPS).
+# This chart references it by name and never ships real values. CLICKHOUSE_DATABASE
+# is intentionally NOT here — it is non-secret and comes from the ConfigMap below.
 secrets:
   existingSecret: qeet-logs-secrets
-  # Keys expected in the secret:
+  # REQUIRED keys:
   #   DATABASE_URL
   #   REDIS_URL
   #   NATS_URL
   #   CLICKHOUSE_URL
-  #   CLICKHOUSE_DATABASE
   #   CLICKHOUSE_USER
   #   CLICKHOUSE_PASSWORD
   #   QEET_ID_ISSUER
-  #   NOTIFY_URL          (optional — Qeet Notify for alerter delivery)
-  #   NOTIFY_KEY          (optional)
+  #   QEET_LOGS_SECRETS_KEY   base64 of 32 random bytes (`openssl rand -base64 32`).
+  #                           Envelope-encrypts secrets at rest (e.g. Slack bot
+  #                           tokens). REQUIRED for prod — the query pod will not
+  #                           start without it (injected as a required secretKeyRef).
+  # OPTIONAL keys (feature-gated — absence just disables the feature, injected as
+  # `optional: true` secretKeyRefs on the query Deployment):
+  #   ANTHROPIC_API_KEY       AI copilot — unset ⇒ /v1/query/copilot* returns 501.
+  #   SLACK_CLIENT_ID         Two-way ChatOps Slack app — unset ⇒ /v1/chatops/* 501.
+  #   SLACK_CLIENT_SECRET
+  #   SLACK_SIGNING_SECRET
+  #   SLACK_REDIRECT_URL
+  #   QEET_NOTIFY_URL         Qeet Notify — alert/notification delivery.
+  #   QEET_NOTIFY_API_KEY
+  #   INGEST_API_KEY          Only needed when collector.enabled=true (see above).
 
 # ─── ConfigMap ────────────────────────────────────────────────────────────────
 config:
   env: production
   clickhouseDatabase: qeet_logs
+  # Per-tenant request cap (requests/minute) on the query surfaces. Non-secret.
+  rateLimitPerMinute: "600"

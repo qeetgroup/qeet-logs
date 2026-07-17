@@ -13,16 +13,18 @@ GIT_SHA    := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -X main.version=$(GIT_SHA) -X main.buildTime=$(BUILD_TIME)
 
-.PHONY: help install build dev dev-ingest dev-console dev-alerter test test-integration \
-        lint fmt vet infra-up infra-down db-reset db-psql \
+.PHONY: help install build dev dev-ingest dev-console dev-alerter dev-lifecycle \
+        test test-integration lint fmt vet ci \
+        docker-build compose-prod-up compose-prod-down \
+        infra-up infra-down db-reset db-psql \
         migrate-up migrate-down migrate-version ch-migrate seed clean kill
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install Go deps + console JS deps
+install: ## Install Go deps + console JS deps (bun)
 	$(GO) mod tidy
-	@if [ -d apps/console ]; then cd apps/console && npm install; fi
+	@if [ -d apps/console ]; then bun install; fi
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
@@ -41,8 +43,11 @@ dev-ingest: ## Run the Rust ingest gateway (requires Rust toolchain)
 dev-alerter: ## Run the alerter engine (cmd/alerter)
 	DATABASE_URL="$(DB_URL)" $(GO) run ./cmd/alerter/
 
-dev-console: ## Start the TanStack Start console on :3020
-	cd apps/console && npm run dev
+dev-lifecycle: ## Run the cold-tier lifecycle mover (cmd/lifecycle)
+	DATABASE_URL="$(DB_URL)" $(GO) run ./cmd/lifecycle/
+
+dev-console: ## Start the TanStack Start console on :3020 (bun)
+	bun run --filter '@qeet-logs/console' dev
 
 # ── Test ─────────────────────────────────────────────────────────────────────
 
@@ -50,7 +55,27 @@ test: vet ## Run all Go unit tests
 	$(GO) test -race -count=1 ./...
 
 test-integration: ## Run integration tests (requires running infra)
-	$(GO) test -race -count=1 -tags integration ./...
+	$(GO) test -race -count=1 -tags integration ./test/integration/...
+
+ci: vet ## Mirror the CI go job locally (vet + race tests + build)
+	$(GO) test -race -count=1 ./...
+	$(GO) build ./...
+
+# ── Containers ─────────────────────────────────────────────────────────────
+REGISTRY ?= ghcr.io/qeetgroup
+TAG      ?= dev
+
+docker-build: ## Build all service images (query/alerter/lifecycle/mcp/ingest)
+	@for svc in query alerter lifecycle mcp ingest; do \
+		echo "building $$svc"; \
+		docker build -f deploy/docker/Dockerfile.$$svc -t $(REGISTRY)/qeet-logs-$$svc:$(TAG) . || exit 1; \
+	done
+
+compose-prod-up: ## Start the production compose stack (deploy/docker-compose.prod.yml)
+	docker compose -f deploy/docker-compose.prod.yml up -d
+
+compose-prod-down: ## Stop the production compose stack
+	docker compose -f deploy/docker-compose.prod.yml down
 
 # ── Quality ──────────────────────────────────────────────────────────────────
 

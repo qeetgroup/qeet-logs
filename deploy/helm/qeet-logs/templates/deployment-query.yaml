@@ -13,6 +13,11 @@ spec:
       app.kubernetes.io/component: query
   template:
     metadata:
+      annotations:
+        # The query API exposes Prometheus metrics on :8100/metrics.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8100"
+        prometheus.io/path: /metrics
       labels:
         {{- include "qeet-logs.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: query
@@ -30,9 +35,66 @@ spec:
                 name: {{ include "qeet-logs.fullname" . }}
             - secretRef:
                 name: {{ .Values.secrets.existingSecret }}
+          # Non-secret config (ENV, CLICKHOUSE_DATABASE, RATE_LIMIT_PER_MINUTE) is
+          # loaded via envFrom the ConfigMap; all secret keys via envFrom the
+          # Secret. The explicit entries below document the feature-gated surface
+          # and enforce that the envelope-encryption key is present in prod.
           env:
             - name: HTTP_PORT
               value: "8100"
+            # Envelope-encryption key for secrets at rest (e.g. Slack bot tokens).
+            # REQUIRED in production — the pod will not start without it. Generate
+            # with `openssl rand -base64 32`.
+            - name: QEET_LOGS_SECRETS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: QEET_LOGS_SECRETS_KEY
+            # AI copilot (governed LLM) — unset ⇒ /v1/query/copilot* returns 501.
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+            # Two-way ChatOps (Slack app) — unset ⇒ /v1/chatops/slack/* returns 501.
+            - name: SLACK_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: SLACK_CLIENT_ID
+                  optional: true
+            - name: SLACK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: SLACK_CLIENT_SECRET
+                  optional: true
+            - name: SLACK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: SLACK_SIGNING_SECRET
+                  optional: true
+            - name: SLACK_REDIRECT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: SLACK_REDIRECT_URL
+                  optional: true
+            # Alert / notification delivery via Qeet Notify.
+            - name: QEET_NOTIFY_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: QEET_NOTIFY_URL
+                  optional: true
+            - name: QEET_NOTIFY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: QEET_NOTIFY_API_KEY
+                  optional: true
           livenessProbe:
             httpGet:
               path: /healthz

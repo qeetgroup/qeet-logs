@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1
+# Qeet Logs — Alerter engine (Go worker; no HTTP surface — singleton).
+# Build context = repository root:
+#   docker build -f deploy/docker/Dockerfile.alerter -t qeet-logs-alerter .
+ARG GO_VERSION=1.25.2
+
+# ── build ──────────────────────────────────────────────────────────────────
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
+WORKDIR /src
+ENV CGO_ENABLED=0
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY . .
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+    -o /out/alerter ./cmd/alerter
+
+# ── runtime ────────────────────────────────────────────────────────────────
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+LABEL org.opencontainers.image.source="https://github.com/qeetgroup/qeet-logs" \
+      org.opencontainers.image.title="qeet-logs-alerter" \
+      org.opencontainers.image.description="Qeet Logs alerter engine"
+COPY --from=build /out/alerter /usr/local/bin/alerter
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/alerter"]

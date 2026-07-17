@@ -7,32 +7,38 @@ import {
   BreadcrumbSeparator,
 } from "@qeetrix/ui";
 import { Link, useLocation } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 
 import { lookupNavTitle } from "@/config/navigation";
 
 export function DynamicBreadcrumb() {
   const { pathname } = useLocation();
-  const { group, parent, title } = lookupNavTitle(pathname);
+  const { t } = useTranslation();
+  const meta = lookupNavTitle(pathname);
+  const title = meta.titleKey ? t(meta.titleKey) : (meta.title ?? "");
+
+  // Show at most 2 levels: prefer parent for sub-items, else group for top-level.
+  const lead = meta.parent
+    ? { title: t(meta.parent.titleKey), url: meta.parent.url }
+    : meta.groupKey
+      ? { title: t(meta.groupKey) }
+      : null;
 
   return (
-    <Breadcrumb>
+    <Breadcrumb className="hidden lg:block">
       <BreadcrumbList>
-        {group && (
+        {lead && (
           <>
-            <BreadcrumbItem className="hidden md:block">
-              <span className="text-muted-foreground text-sm">{group}</span>
+            <BreadcrumbItem>
+              {"url" in lead && lead.url ? (
+                <BreadcrumbLink render={<Link to={lead.url as never} />}>
+                  {lead.title}
+                </BreadcrumbLink>
+              ) : (
+                <span className="text-muted-foreground">{lead.title}</span>
+              )}
             </BreadcrumbItem>
-            <BreadcrumbSeparator className="hidden md:block" />
-          </>
-        )}
-        {parent && (
-          <>
-            <BreadcrumbItem className="hidden md:block">
-              <BreadcrumbLink render={<Link to={parent.url as never} />}>
-                {parent.title}
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator className="hidden md:block" />
+            <BreadcrumbSeparator />
           </>
         )}
         <BreadcrumbItem>

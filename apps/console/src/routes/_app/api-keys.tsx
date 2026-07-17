@@ -1,321 +1,288 @@
 import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  Alert,
+  AlertDescription,
+  AlertTitle,
   Badge,
   Button,
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Checkbox,
   CopyableSecret,
+  DataState,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   EmptyState,
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
   Input,
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
+  Label,
+  StatusPill,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  TimeSince,
 } from "@qeetrix/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { KeyRoundIcon, Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
+import { useConfirmDialog } from "@/components/confirm-dialog";
+import { PageHeader } from "@/components/page-header";
 import { api } from "@/lib/api";
+import { formatDateTime, relativeTime } from "@/lib/format";
 
-export const Route = createFileRoute("/_app/api-keys")({ component: APIKeysPage });
+export const Route = createFileRoute("/_app/api-keys")({ component: ApiKeysPage });
 
-const ALL_SCOPES = [
-  { value: "logs:ingest", label: "Ingest", description: "Write log events" },
-  { value: "logs:read", label: "Read", description: "Query logs (read-only)" },
-  { value: "logs:query", label: "Query", description: "Advanced query access" },
-  { value: "logs:export", label: "Export", description: "Download / export" },
-  { value: "logs:admin", label: "Admin", description: "Manage keys, rules, settings" },
-  { value: "logs:platform", label: "Platform", description: "Cross-tenant access (operators only)" },
-] as const;
-
-type APIKey = {
+// The Go handler marshals these structs without json tags → PascalCase keys.
+type ApiKeyRow = {
   ID: string;
-  TenantID: string;
   Name: string;
   KeyPrefix: string;
   Scopes: string[];
-  LastUsedAt: string | null;
-  ExpiresAt: string | null;
-  RevokedAt: string | null;
+  LastUsedAt?: string | null;
+  ExpiresAt?: string | null;
+  RevokedAt?: string | null;
   CreatedAt: string;
 };
 
-type NewAPIKey = APIKey & { Key: string };
+type NewApiKey = ApiKeyRow & { Key: string };
 
-function useAPIKeys() {
-  return useQuery({
+const ALL_SCOPES = [
+  "logs:ingest",
+  "logs:read",
+  "logs:query",
+  "logs:export",
+  "logs:admin",
+  "logs:platform",
+] as const;
+
+function ApiKeysPage() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [dialog, confirm] = useConfirmDialog();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [scopes, setScopes] = useState<Set<string>>(new Set(["logs:read", "logs:query"]));
+  const [created, setCreated] = useState<NewApiKey | null>(null);
+
+  const keysQ = useQuery({
     queryKey: ["api-keys"],
-    queryFn: () => api<APIKey[]>("/v1/admin/api-keys"),
+    queryFn: () => api<ApiKeyRow[]>("/v1/admin/api-keys"),
+    retry: false,
+    meta: { silent: true },
   });
-}
 
-function CreateSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const qc = useQueryClient();
-  const [selectedScopes, setSelectedScopes] = useState<string[]>(["logs:ingest", "logs:read"]);
-  const [newKey, setNewKey] = useState<string | null>(null);
-  const [nameError, setNameError] = useState("");
-
-  const createM = useMutation({
-    mutationFn: (data: { name: string; scopes: string[] }) =>
-      api<NewAPIKey>("/v1/admin/api-keys", { method: "POST", body: data }),
-    onSuccess: (res) => {
+  const createKey = useMutation({
+    mutationFn: (body: { name: string; scopes: string[] }) =>
+      api<NewApiKey>("/v1/admin/api-keys", { method: "POST", body }),
+    onSuccess: (key) => {
       qc.invalidateQueries({ queryKey: ["api-keys"] });
-      setNewKey(res.Key);
+      setOpen(false);
+      setName("");
+      setScopes(new Set(["logs:read", "logs:query"]));
+      setCreated(key);
     },
-    meta: { successMessage: "API key created — save it now" },
+    meta: { successMessage: t("pages.apiKeys.createdToast") },
   });
 
-  function toggleScope(scope: string) {
-    setSelectedScopes((prev) =>
-      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
-    );
-  }
-
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const name = String(fd.get("name") ?? "").trim();
-    if (!name) { setNameError("Name is required."); return; }
-    if (selectedScopes.length === 0) return;
-    setNameError("");
-    createM.mutate({ name, scopes: selectedScopes });
-  }
-
-  function handleClose() {
-    setNewKey(null);
-    setSelectedScopes(["logs:ingest", "logs:read"]);
-    setNameError("");
-    onOpenChange(false);
-  }
-
-  return (
-    <Sheet open={open} onOpenChange={handleClose}>
-      <SheetContent side="right" className="w-full sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>Create API Key</SheetTitle>
-          <SheetDescription>
-            The raw key is shown once on creation — copy it now.
-          </SheetDescription>
-        </SheetHeader>
-
-        {newKey ? (
-          /* Revealed key view */
-          <div className="flex h-full flex-col gap-4 px-4 py-4">
-            <div className="rounded-lg border border-success/40 bg-success/5 p-4">
-              <p className="mb-3 text-sm font-medium text-success">Save your API key now</p>
-              <CopyableSecret value={newKey} label="API Key" />
-              <p className="mt-2 text-xs text-muted-foreground">
-                This key will <strong>not</strong> be shown again. Store it securely.
-              </p>
-            </div>
-            <SheetFooter>
-              <Button onClick={handleClose} className="w-full">Done</Button>
-            </SheetFooter>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="flex h-full flex-col">
-            <div className="flex-1 overflow-y-auto px-4 py-3">
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="key-name">Name</FieldLabel>
-                  <Input id="key-name" name="name" placeholder="CI pipeline key" />
-                  {nameError && <FieldError>{nameError}</FieldError>}
-                </Field>
-                <Field>
-                  <FieldLabel>Scopes</FieldLabel>
-                  <FieldDescription>Grant only the permissions this key needs.</FieldDescription>
-                  <div className="mt-2 space-y-2">
-                    {ALL_SCOPES.map(({ value, label, description }) => (
-                      <label key={value} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-muted/40">
-                        <Checkbox
-                          checked={selectedScopes.includes(value)}
-                          onCheckedChange={() => toggleScope(value)}
-                          id={`scope-${value}`}
-                        />
-                        <div>
-                          <p className="text-sm font-medium leading-none">{label}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </Field>
-              </FieldGroup>
-            </div>
-            <SheetFooter className="border-t px-4 py-3">
-              <SheetClose render={<Button variant="outline" type="button" />}>Cancel</SheetClose>
-              <Button type="submit" disabled={createM.isPending || selectedScopes.length === 0}>
-                {createM.isPending && <Loader2Icon className="mr-1.5 size-4 animate-spin" />}
-                Create Key
-              </Button>
-            </SheetFooter>
-          </form>
-        )}
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function APIKeysPage() {
-  const keysQ = useAPIKeys();
-  const qc = useQueryClient();
-  const [creating, setCreating] = useState(false);
-  const [revoking, setRevoking] = useState<string | null>(null);
-
-  const revokeM = useMutation({
+  const revokeKey = useMutation({
     mutationFn: (id: string) => api(`/v1/admin/api-keys/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["api-keys"] });
-      setRevoking(null);
-    },
-    meta: { successMessage: "API key revoked" },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["api-keys"] }),
+    meta: { successMessage: t("pages.apiKeys.revokedToast") },
   });
+
+  function toggleScope(s: string) {
+    setScopes((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
+      return next;
+    });
+  }
 
   const keys = keysQ.data ?? [];
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-heading text-2xl font-semibold tracking-tight">API Keys</h1>
-          <p className="text-sm text-muted-foreground">Scoped keys for SDK and CLI access</p>
-        </div>
-        <Button onClick={() => setCreating(true)}>
-          <PlusIcon className="mr-1.5 size-4" /> New Key
-        </Button>
-      </div>
+    <>
+      <PageHeader
+        title={t("pages.apiKeys.title")}
+        description={t("pages.apiKeys.description")}
+        actions={
+          <Button onClick={() => setOpen(true)}>
+            <PlusIcon /> {t("pages.apiKeys.newKey")}
+          </Button>
+        }
+      />
 
       <Card>
-        <CardHeader>
-          <CardTitle>Active Keys</CardTitle>
-          <CardDescription>
-            {keys.length} active key{keys.length !== 1 ? "s" : ""}
-          </CardDescription>
-        </CardHeader>
         <CardContent className="p-0">
-          {keysQ.isLoading ? (
-            <div className="px-6 py-12 text-center">
-              <Loader2Icon className="mx-auto size-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : keys.length === 0 ? (
-            <div className="px-6 py-12">
+          <DataState
+            isLoading={keysQ.isLoading}
+            isError={keysQ.isError}
+            error={keysQ.error}
+            isEmpty={!keysQ.isLoading && keys.length === 0}
+            empty={
               <EmptyState
                 icon={KeyRoundIcon}
-                title="No API keys"
-                description="Create a key to start ingesting logs or querying via the API."
-              >
-                <Button onClick={() => setCreating(true)}>
-                  <PlusIcon className="mr-1.5 size-4" /> Create first key
-                </Button>
-              </EmptyState>
-            </div>
-          ) : (
+                title={t("pages.apiKeys.emptyTitle")}
+                description={t("pages.apiKeys.emptyDescription")}
+                action={
+                  <Button onClick={() => setOpen(true)}>
+                    <PlusIcon /> {t("pages.apiKeys.newKey")}
+                  </Button>
+                }
+              />
+            }
+            skeletonRows={5}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Key prefix</TableHead>
-                  <TableHead>Scopes</TableHead>
-                  <TableHead>Last used</TableHead>
-                  <TableHead>Expires</TableHead>
-                  <TableHead>Created</TableHead>
+                  <TableHead>{t("columns.name")}</TableHead>
+                  <TableHead>{t("columns.prefix")}</TableHead>
+                  <TableHead>{t("columns.scopes")}</TableHead>
+                  <TableHead>{t("columns.lastUsed")}</TableHead>
+                  <TableHead>{t("columns.status")}</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {keys.map((key) => (
-                  <TableRow key={key.ID}>
-                    <TableCell className="font-medium">{key.Name}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {key.KeyPrefix}…
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {key.Scopes.map((s) => (
-                          <Badge key={s} variant="secondary" className="text-[10px]">
-                            {s.replace("logs:", "")}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {key.LastUsedAt ? <TimeSince value={key.LastUsedAt} /> : "Never"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {key.ExpiresAt ? <TimeSince value={key.ExpiresAt} /> : "Never"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <TimeSince value={key.CreatedAt} />
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-muted-foreground hover:text-destructive"
-                        onClick={() => setRevoking(key.ID)}
-                        aria-label="Revoke key"
-                      >
-                        <Trash2Icon className="size-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {keys.map((k) => {
+                  const revoked = Boolean(k.RevokedAt);
+                  return (
+                    <TableRow key={k.ID}>
+                      <TableCell className="font-medium">{k.Name}</TableCell>
+                      <TableCell className="font-mono-logs text-xs text-muted-foreground">
+                        {k.KeyPrefix}…
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {(k.Scopes ?? []).map((s) => (
+                            <Badge key={s} variant="muted" className="font-mono-logs text-[10px]">
+                              {s}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {k.LastUsedAt ? relativeTime(k.LastUsedAt) : t("pages.apiKeys.never")}
+                      </TableCell>
+                      <TableCell>
+                        <StatusPill kind={revoked ? "danger" : "success"}>
+                          {revoked ? t("pages.apiKeys.revoked") : t("pages.apiKeys.active")}
+                        </StatusPill>
+                      </TableCell>
+                      <TableCell>
+                        {!revoked && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t("pages.apiKeys.revokeAria", { name: k.Name })}
+                            onClick={() =>
+                              confirm({
+                                title: t("pages.apiKeys.revokeTitle", { name: k.Name }),
+                                description: t("pages.apiKeys.revokeDescription"),
+                                confirmLabel: t("pages.apiKeys.revoke"),
+                                onConfirm: () => revokeKey.mutate(k.ID),
+                              })
+                            }
+                          >
+                            <Trash2Icon className="text-destructive" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
-          )}
+          </DataState>
         </CardContent>
       </Card>
 
-      <CreateSheet open={creating} onOpenChange={setCreating} />
-
-      <AlertDialog open={!!revoking} onOpenChange={(o) => !o && setRevoking(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Revoke this API key?</AlertDialogTitle>
-            <AlertDialogDescription>
-              All requests using this key will immediately start failing. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+      {/* Create dialog */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("pages.apiKeys.createTitle")}</DialogTitle>
+            <DialogDescription>{t("pages.apiKeys.createDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="key-name">{t("fields.name")}</Label>
+              <Input
+                id="key-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t("pages.apiKeys.namePlaceholder")}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>{t("fields.scopes")}</Label>
+              <div className="flex flex-wrap gap-2">
+                {ALL_SCOPES.map((s) => {
+                  const on = scopes.has(s);
+                  return (
+                    <Button
+                      key={s}
+                      type="button"
+                      size="sm"
+                      variant={on ? "default" : "outline"}
+                      className="font-mono-logs text-xs"
+                      onClick={() => toggleScope(s)}
+                    >
+                      {s}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline">{t("actions.cancel")}</Button>} />
             <Button
-              variant="destructive"
-              onClick={() => revoking && revokeM.mutate(revoking)}
-              disabled={revokeM.isPending}
+              onClick={() => createKey.mutate({ name: name.trim(), scopes: [...scopes] })}
+              disabled={!name.trim() || scopes.size === 0 || createKey.isPending}
             >
-              {revokeM.isPending && <Loader2Icon className="mr-1.5 size-4 animate-spin" />}
-              Revoke Key
+              {createKey.isPending && <Loader2Icon className="animate-spin" />}
+              {t("pages.apiKeys.createKey")}
             </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reveal-once dialog */}
+      <Dialog open={!!created} onOpenChange={(o) => !o && setCreated(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("pages.apiKeys.revealTitle")}</DialogTitle>
+            <DialogDescription>{t("pages.apiKeys.revealDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <Alert variant="warning">
+              <AlertTitle>{created?.Name}</AlertTitle>
+              <AlertDescription>
+                {t("fields.scopes")}: {(created?.Scopes ?? []).join(", ")}
+                {created?.ExpiresAt
+                  ? ` · ${t("pages.apiKeys.expires", { date: formatDateTime(created.ExpiresAt) })}`
+                  : ""}
+              </AlertDescription>
+            </Alert>
+            {created?.Key && <CopyableSecret value={created.Key} oneLine />}
+          </div>
+          <DialogFooter>
+            <DialogClose render={<Button>{t("actions.done")}</Button>} />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {dialog}
+    </>
   );
 }

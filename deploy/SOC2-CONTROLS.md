@@ -20,7 +20,7 @@ Maps the Trust Services Criteria (TSC) CC categories to Qeet Logs implementation
 
 | Control | Implementation |
 |---|---|
-| CC2.1 Internal communication | Internal API documented in `api/openapi/openapi.yaml`; CLAUDE.md for ops knowledge |
+| CC2.1 Internal communication | Internal API documented in `api/openapi/*.yaml` (split by bounded context); CLAUDE.md for ops knowledge |
 | CC2.2 External communication | Public API docs at `docs.qeet.in/logs`; status page planned |
 | CC2.3 Reporting deficiencies | Alert rules engine (`domains/alerting/`) delivers to webhook/Qeet Notify on state change |
 

@@ -12,13 +12,22 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppWebhooksRouteImport } from './routes/_app/webhooks'
+import { Route as AppTopologyRouteImport } from './routes/_app/topology'
+import { Route as AppTimelineRouteImport } from './routes/_app/timeline'
 import { Route as AppTailRouteImport } from './routes/_app/tail'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSearchRouteImport } from './routes/_app/search'
 import { Route as AppSavedSearchesRouteImport } from './routes/_app/saved-searches'
+import { Route as AppPostmortemsRouteImport } from './routes/_app/postmortems'
+import { Route as AppIncidentsRouteImport } from './routes/_app/incidents'
+import { Route as AppExportRouteImport } from './routes/_app/export'
 import { Route as AppDashboardsRouteImport } from './routes/_app/dashboards'
+import { Route as AppChangesRouteImport } from './routes/_app/changes'
+import { Route as AppBusinessContextRouteImport } from './routes/_app/business-context'
 import { Route as AppAuditRouteImport } from './routes/_app/audit'
 import { Route as AppApiKeysRouteImport } from './routes/_app/api-keys'
+import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
 import { Route as AppAlertsRouteImport } from './routes/_app/alerts'
 
 const SignInRoute = SignInRouteImport.update({
@@ -33,6 +42,21 @@ const AppRoute = AppRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWebhooksRoute = AppWebhooksRouteImport.update({
+  id: '/webhooks',
+  path: '/webhooks',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTopologyRoute = AppTopologyRouteImport.update({
+  id: '/topology',
+  path: '/topology',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTimelineRoute = AppTimelineRouteImport.update({
+  id: '/timeline',
+  path: '/timeline',
   getParentRoute: () => AppRoute,
 } as any)
 const AppTailRoute = AppTailRouteImport.update({
@@ -55,9 +79,34 @@ const AppSavedSearchesRoute = AppSavedSearchesRouteImport.update({
   path: '/saved-searches',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPostmortemsRoute = AppPostmortemsRouteImport.update({
+  id: '/postmortems',
+  path: '/postmortems',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppIncidentsRoute = AppIncidentsRouteImport.update({
+  id: '/incidents',
+  path: '/incidents',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppExportRoute = AppExportRouteImport.update({
+  id: '/export',
+  path: '/export',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDashboardsRoute = AppDashboardsRouteImport.update({
   id: '/dashboards',
   path: '/dashboards',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppChangesRoute = AppChangesRouteImport.update({
+  id: '/changes',
+  path: '/changes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBusinessContextRoute = AppBusinessContextRouteImport.update({
+  id: '/business-context',
+  path: '/business-context',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAuditRoute = AppAuditRouteImport.update({
@@ -70,6 +119,11 @@ const AppApiKeysRoute = AppApiKeysRouteImport.update({
   path: '/api-keys',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAlertsRoute = AppAlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -80,24 +134,42 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/sign-in': typeof SignInRoute
   '/alerts': typeof AppAlertsRoute
+  '/analytics': typeof AppAnalyticsRoute
   '/api-keys': typeof AppApiKeysRoute
   '/audit': typeof AppAuditRoute
+  '/business-context': typeof AppBusinessContextRoute
+  '/changes': typeof AppChangesRoute
   '/dashboards': typeof AppDashboardsRoute
+  '/export': typeof AppExportRoute
+  '/incidents': typeof AppIncidentsRoute
+  '/postmortems': typeof AppPostmortemsRoute
   '/saved-searches': typeof AppSavedSearchesRoute
   '/search': typeof AppSearchRoute
   '/settings': typeof AppSettingsRoute
   '/tail': typeof AppTailRoute
+  '/timeline': typeof AppTimelineRoute
+  '/topology': typeof AppTopologyRoute
+  '/webhooks': typeof AppWebhooksRoute
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/alerts': typeof AppAlertsRoute
+  '/analytics': typeof AppAnalyticsRoute
   '/api-keys': typeof AppApiKeysRoute
   '/audit': typeof AppAuditRoute
+  '/business-context': typeof AppBusinessContextRoute
+  '/changes': typeof AppChangesRoute
   '/dashboards': typeof AppDashboardsRoute
+  '/export': typeof AppExportRoute
+  '/incidents': typeof AppIncidentsRoute
+  '/postmortems': typeof AppPostmortemsRoute
   '/saved-searches': typeof AppSavedSearchesRoute
   '/search': typeof AppSearchRoute
   '/settings': typeof AppSettingsRoute
   '/tail': typeof AppTailRoute
+  '/timeline': typeof AppTimelineRoute
+  '/topology': typeof AppTopologyRoute
+  '/webhooks': typeof AppWebhooksRoute
   '/': typeof AppIndexRoute
 }
 export interface FileRoutesById {
@@ -105,13 +177,22 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/_app/alerts': typeof AppAlertsRoute
+  '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/api-keys': typeof AppApiKeysRoute
   '/_app/audit': typeof AppAuditRoute
+  '/_app/business-context': typeof AppBusinessContextRoute
+  '/_app/changes': typeof AppChangesRoute
   '/_app/dashboards': typeof AppDashboardsRoute
+  '/_app/export': typeof AppExportRoute
+  '/_app/incidents': typeof AppIncidentsRoute
+  '/_app/postmortems': typeof AppPostmortemsRoute
   '/_app/saved-searches': typeof AppSavedSearchesRoute
   '/_app/search': typeof AppSearchRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/tail': typeof AppTailRoute
+  '/_app/timeline': typeof AppTimelineRoute
+  '/_app/topology': typeof AppTopologyRoute
+  '/_app/webhooks': typeof AppWebhooksRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
@@ -120,37 +201,64 @@ export interface FileRouteTypes {
     | '/'
     | '/sign-in'
     | '/alerts'
+    | '/analytics'
     | '/api-keys'
     | '/audit'
+    | '/business-context'
+    | '/changes'
     | '/dashboards'
+    | '/export'
+    | '/incidents'
+    | '/postmortems'
     | '/saved-searches'
     | '/search'
     | '/settings'
     | '/tail'
+    | '/timeline'
+    | '/topology'
+    | '/webhooks'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/sign-in'
     | '/alerts'
+    | '/analytics'
     | '/api-keys'
     | '/audit'
+    | '/business-context'
+    | '/changes'
     | '/dashboards'
+    | '/export'
+    | '/incidents'
+    | '/postmortems'
     | '/saved-searches'
     | '/search'
     | '/settings'
     | '/tail'
+    | '/timeline'
+    | '/topology'
+    | '/webhooks'
     | '/'
   id:
     | '__root__'
     | '/_app'
     | '/sign-in'
     | '/_app/alerts'
+    | '/_app/analytics'
     | '/_app/api-keys'
     | '/_app/audit'
+    | '/_app/business-context'
+    | '/_app/changes'
     | '/_app/dashboards'
+    | '/_app/export'
+    | '/_app/incidents'
+    | '/_app/postmortems'
     | '/_app/saved-searches'
     | '/_app/search'
     | '/_app/settings'
     | '/_app/tail'
+    | '/_app/timeline'
+    | '/_app/topology'
+    | '/_app/webhooks'
     | '/_app/'
   fileRoutesById: FileRoutesById
 }
@@ -182,6 +290,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/webhooks': {
+      id: '/_app/webhooks'
+      path: '/webhooks'
+      fullPath: '/webhooks'
+      preLoaderRoute: typeof AppWebhooksRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/topology': {
+      id: '/_app/topology'
+      path: '/topology'
+      fullPath: '/topology'
+      preLoaderRoute: typeof AppTopologyRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/timeline': {
+      id: '/_app/timeline'
+      path: '/timeline'
+      fullPath: '/timeline'
+      preLoaderRoute: typeof AppTimelineRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/tail': {
       id: '/_app/tail'
       path: '/tail'
@@ -210,11 +339,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSavedSearchesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/postmortems': {
+      id: '/_app/postmortems'
+      path: '/postmortems'
+      fullPath: '/postmortems'
+      preLoaderRoute: typeof AppPostmortemsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/incidents': {
+      id: '/_app/incidents'
+      path: '/incidents'
+      fullPath: '/incidents'
+      preLoaderRoute: typeof AppIncidentsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/export': {
+      id: '/_app/export'
+      path: '/export'
+      fullPath: '/export'
+      preLoaderRoute: typeof AppExportRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/dashboards': {
       id: '/_app/dashboards'
       path: '/dashboards'
       fullPath: '/dashboards'
       preLoaderRoute: typeof AppDashboardsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/changes': {
+      id: '/_app/changes'
+      path: '/changes'
+      fullPath: '/changes'
+      preLoaderRoute: typeof AppChangesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/business-context': {
+      id: '/_app/business-context'
+      path: '/business-context'
+      fullPath: '/business-context'
+      preLoaderRoute: typeof AppBusinessContextRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/audit': {
@@ -231,6 +395,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppApiKeysRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/analytics': {
+      id: '/_app/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AppAnalyticsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/alerts': {
       id: '/_app/alerts'
       path: '/alerts'
@@ -243,25 +414,43 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppAlertsRoute: typeof AppAlertsRoute
+  AppAnalyticsRoute: typeof AppAnalyticsRoute
   AppApiKeysRoute: typeof AppApiKeysRoute
   AppAuditRoute: typeof AppAuditRoute
+  AppBusinessContextRoute: typeof AppBusinessContextRoute
+  AppChangesRoute: typeof AppChangesRoute
   AppDashboardsRoute: typeof AppDashboardsRoute
+  AppExportRoute: typeof AppExportRoute
+  AppIncidentsRoute: typeof AppIncidentsRoute
+  AppPostmortemsRoute: typeof AppPostmortemsRoute
   AppSavedSearchesRoute: typeof AppSavedSearchesRoute
   AppSearchRoute: typeof AppSearchRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTailRoute: typeof AppTailRoute
+  AppTimelineRoute: typeof AppTimelineRoute
+  AppTopologyRoute: typeof AppTopologyRoute
+  AppWebhooksRoute: typeof AppWebhooksRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppAlertsRoute: AppAlertsRoute,
+  AppAnalyticsRoute: AppAnalyticsRoute,
   AppApiKeysRoute: AppApiKeysRoute,
   AppAuditRoute: AppAuditRoute,
+  AppBusinessContextRoute: AppBusinessContextRoute,
+  AppChangesRoute: AppChangesRoute,
   AppDashboardsRoute: AppDashboardsRoute,
+  AppExportRoute: AppExportRoute,
+  AppIncidentsRoute: AppIncidentsRoute,
+  AppPostmortemsRoute: AppPostmortemsRoute,
   AppSavedSearchesRoute: AppSavedSearchesRoute,
   AppSearchRoute: AppSearchRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTailRoute: AppTailRoute,
+  AppTimelineRoute: AppTimelineRoute,
+  AppTopologyRoute: AppTopologyRoute,
+  AppWebhooksRoute: AppWebhooksRoute,
   AppIndexRoute: AppIndexRoute,
 }
 

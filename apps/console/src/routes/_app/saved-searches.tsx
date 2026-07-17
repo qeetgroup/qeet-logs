@@ -1,231 +1,126 @@
 import {
-  Badge,
   Button,
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  DataState,
   EmptyState,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  Input,
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  TimeSince,
 } from "@qeetrix/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { BookmarkIcon, ExternalLinkIcon, Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
-import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { BookmarkIcon, PlayIcon, Trash2Icon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
+import { useConfirmDialog } from "@/components/confirm-dialog";
+import { PageHeader } from "@/components/page-header";
 import { api } from "@/lib/api";
+import { relativeTime } from "@/lib/format";
 
 export const Route = createFileRoute("/_app/saved-searches")({ component: SavedSearchesPage });
 
 type SavedSearch = {
   id: string;
-  tenant_id: string;
   name: string;
   query_text: string;
-  created_by: string | null;
-  created_at: string;
+  created_by?: string | null;
+  created_at?: string;
 };
 
-function useSavedSearches() {
-  return useQuery({
+function SavedSearchesPage() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [dialog, confirm] = useConfirmDialog();
+
+  const listQ = useQuery({
     queryKey: ["saved-searches"],
     queryFn: () => api<SavedSearch[]>("/v1/admin/saved-searches"),
-  });
-}
-
-// ── Create Sheet ─────────────────────────────────────────────────────────────
-
-function CreateSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const qc = useQueryClient();
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const createM = useMutation({
-    mutationFn: (data: { name: string; query_text: string }) =>
-      api<SavedSearch>("/v1/admin/saved-searches", { method: "POST", body: data }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["saved-searches"] });
-      onOpenChange(false);
-      setErrors({});
-    },
-    meta: { successMessage: "Search saved" },
+    retry: false,
+    meta: { silent: true },
   });
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const name = String(fd.get("name") ?? "").trim();
-    const query_text = String(fd.get("query_text") ?? "").trim();
-    const errs: Record<string, string> = {};
-    if (!name) errs.name = "Name is required.";
-    if (!query_text) errs.query_text = "Query is required.";
-    setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
-    createM.mutate({ name, query_text });
-  }
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>Save Search</SheetTitle>
-          <SheetDescription>
-            Bookmark a LogQL++ query so you can run it again instantly.
-          </SheetDescription>
-        </SheetHeader>
-        <form onSubmit={handleSubmit} className="flex h-full flex-col">
-          <div className="flex-1 overflow-y-auto px-4 py-3">
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="ss-name">Name</FieldLabel>
-                <Input id="ss-name" name="name" placeholder="Production errors last 24h" autoFocus />
-                {errors.name && <FieldError>{errors.name}</FieldError>}
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="ss-query">LogQL++ query</FieldLabel>
-                <textarea
-                  id="ss-query"
-                  name="query_text"
-                  rows={5}
-                  defaultValue="SELECT * FROM logs WHERE level = 'error' LIMIT 50"
-                  className="w-full resize-none rounded-md border bg-muted/30 p-3 font-mono text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  spellCheck={false}
-                />
-                {errors.query_text && <FieldError>{errors.query_text}</FieldError>}
-              </Field>
-            </FieldGroup>
-          </div>
-          <SheetFooter className="border-t px-4 py-3">
-            <SheetClose render={<Button variant="outline" type="button" />}>Cancel</SheetClose>
-            <Button type="submit" disabled={createM.isPending}>
-              {createM.isPending && <Loader2Icon className="mr-1.5 size-4 animate-spin" />}
-              Save Search
-            </Button>
-          </SheetFooter>
-        </form>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-// ── Page ──────────────────────────────────────────────────────────────────────
-
-function SavedSearchesPage() {
-  const navigate = useNavigate();
-  const searchesQ = useSavedSearches();
-  const qc = useQueryClient();
-  const [creating, setCreating] = useState(false);
-
-  const deleteM = useMutation({
+  const remove = useMutation({
     mutationFn: (id: string) => api(`/v1/admin/saved-searches/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["saved-searches"] }),
-    meta: { successMessage: "Saved search deleted" },
+    meta: { successMessage: t("pages.savedSearches.deletedToast") },
   });
 
-  function openInSearch(query: string) {
-    navigate({ to: "/search", search: { q: query } as never });
-  }
-
-  const searches = searchesQ.data ?? [];
+  const rows = listQ.data ?? [];
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-heading text-2xl font-semibold tracking-tight">Saved Searches</h1>
-          <p className="text-sm text-muted-foreground">Bookmark queries to run them instantly</p>
-        </div>
-        <Button onClick={() => setCreating(true)}>
-          <PlusIcon className="mr-1.5 size-4" />Save Search
-        </Button>
-      </div>
+    <>
+      <PageHeader
+        title={t("pages.savedSearches.title")}
+        description={t("pages.savedSearches.description")}
+      />
 
       <Card>
-        <CardHeader>
-          <CardTitle>Bookmarks</CardTitle>
-          <CardDescription>
-            {searches.length} saved search{searches.length !== 1 ? "es" : ""}
-          </CardDescription>
-        </CardHeader>
         <CardContent className="p-0">
-          {searchesQ.isLoading ? (
-            <div className="px-6 py-12 text-center">
-              <Loader2Icon className="mx-auto size-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : searches.length === 0 ? (
-            <div className="px-6 py-12">
+          <DataState
+            isLoading={listQ.isLoading}
+            isError={listQ.isError}
+            error={listQ.error}
+            isEmpty={!listQ.isLoading && rows.length === 0}
+            empty={
               <EmptyState
                 icon={BookmarkIcon}
-                title="No saved searches"
-                description="Save a LogQL++ query to revisit it without retyping."
-              >
-                <Button onClick={() => setCreating(true)}>
-                  <PlusIcon className="mr-1.5 size-4" />Save first search
-                </Button>
-              </EmptyState>
-            </div>
-          ) : (
+                title={t("pages.savedSearches.emptyTitle")}
+                description={t("pages.savedSearches.emptyDescription")}
+                action={
+                  <Button render={<Link to="/search" />}>
+                    <PlayIcon /> {t("pages.savedSearches.goToSearch")}
+                  </Button>
+                }
+              />
+            }
+            skeletonRows={5}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Query</TableHead>
-                  <TableHead>Saved</TableHead>
-                  <TableHead className="w-28 text-right">Actions</TableHead>
+                  <TableHead>{t("columns.name")}</TableHead>
+                  <TableHead>{t("columns.query")}</TableHead>
+                  <TableHead>{t("columns.created")}</TableHead>
+                  <TableHead className="w-28 text-right">{t("columns.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {searches.map((s) => (
+                {rows.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{s.name}</TableCell>
-                    <TableCell className="max-w-xs">
-                      <Badge variant="outline" className="max-w-full truncate font-mono text-[10px]">
-                        {s.query_text.length > 60
-                          ? s.query_text.slice(0, 58) + "…"
-                          : s.query_text}
-                      </Badge>
+                    <TableCell className="max-w-md truncate font-mono-logs text-xs text-muted-foreground">
+                      {s.query_text}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
-                      <TimeSince value={s.created_at} />
+                    <TableCell className="text-muted-foreground">
+                      {relativeTime(s.created_at)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-7 text-muted-foreground hover:text-primary"
-                          onClick={() => openInSearch(s.query_text)}
-                          title="Open in Log Search"
+                          aria-label={t("pages.savedSearches.runAria", { name: s.name })}
+                          render={<Link to="/search" search={{ q: s.query_text }} />}
                         >
-                          <ExternalLinkIcon className="size-3.5" />
+                          <PlayIcon />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => deleteM.mutate(s.id)}
-                          disabled={deleteM.isPending}
-                          title="Delete"
+                          aria-label={t("pages.savedSearches.deleteAria", { name: s.name })}
+                          onClick={() =>
+                            confirm({
+                              title: t("pages.savedSearches.deleteTitle", { name: s.name }),
+                              confirmLabel: t("actions.delete"),
+                              onConfirm: () => remove.mutate(s.id),
+                            })
+                          }
                         >
-                          <Trash2Icon className="size-3.5" />
+                          <Trash2Icon className="text-destructive" />
                         </Button>
                       </div>
                     </TableCell>
@@ -233,11 +128,11 @@ function SavedSearchesPage() {
                 ))}
               </TableBody>
             </Table>
-          )}
+          </DataState>
         </CardContent>
       </Card>
 
-      <CreateSheet open={creating} onOpenChange={setCreating} />
-    </div>
+      {dialog}
+    </>
   );
 }

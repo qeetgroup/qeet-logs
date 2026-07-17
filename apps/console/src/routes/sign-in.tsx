@@ -1,90 +1,94 @@
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "@qeetrix/ui";
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Input,
+  Label,
+} from "@qeetrix/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { DatabaseZapIcon, Loader2Icon } from "lucide-react";
-import { useState } from "react";
+import { KeyRoundIcon, Loader2Icon, ScrollTextIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 
-import { validateKey } from "@/lib/auth";
+import { isAuthenticated, useSignIn } from "@/lib/auth";
 
 export const Route = createFileRoute("/sign-in")({ component: SignInPage });
 
 function SignInPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [key, setKey] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const signIn = useSignIn();
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = key.trim();
-    if (!trimmed) { setError("API key is required."); return; }
-
-    setError("");
-    setLoading(true);
-    try {
-      const ok = await validateKey(trimmed);
-      if (ok) {
-        navigate({ to: "/" });
-      } else {
-        setError("Invalid API key — check the value and try again.");
-      }
-    } catch {
-      setError("Could not reach the Qeet Logs API. Is the query service running?");
-    } finally {
-      setLoading(false);
-    }
-  }
+  useEffect(() => {
+    if (isAuthenticated()) navigate({ to: "/", replace: true });
+  }, [navigate]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <div className="w-full max-w-sm space-y-6">
-        {/* Brand */}
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
-            <DatabaseZapIcon className="size-6" />
-          </div>
-          <div>
-            <h1 className="font-heading text-xl font-semibold tracking-tight">Qeet Logs</h1>
-            <p className="text-sm text-muted-foreground">Enterprise log management console</p>
-          </div>
-        </div>
+    <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-muted/30 p-6">
+      <div className="flex items-center gap-2 font-heading text-lg font-semibold">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <ScrollTextIcon className="size-4" />
+        </span>
+        {t("app.name")}
+      </div>
 
-        {/* Sign-in card */}
-        <Card className="shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Sign in with API key</CardTitle>
-            <CardDescription>
-              Create an API key with <code className="text-xs">logs:admin</code> scope to access
-              the console. The key begins with <code className="text-xs">qeel_</code>.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div>
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle>{t("signIn.title")}</CardTitle>
+          <CardDescription>
+            <Trans i18nKey="signIn.description" components={{ code: <code /> }} />
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (key.trim()) signIn.mutate(key);
+            }}
+          >
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="api-key">{t("signIn.apiKeyLabel")}</Label>
+              <div className="relative">
+                <KeyRoundIcon className="pointer-events-none absolute inset-s-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="api-key"
                   type="password"
-                  autoComplete="current-password"
-                  placeholder="qeel_…"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="qlog_live_…"
+                  className="ps-9 font-mono-logs"
                   value={key}
-                  onChange={(e) => { setKey(e.target.value); setError(""); }}
-                  className="font-mono"
-                  autoFocus
+                  onChange={(e) => setKey(e.target.value)}
                 />
-                {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading && <Loader2Icon className="mr-1.5 size-4 animate-spin" />}
-                Sign in
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+            </div>
 
-        <p className="text-center text-xs text-muted-foreground">
-          Your key is stored in <code>localStorage</code> and never sent to any server other
-          than the configured Qeet Logs API.
-        </p>
-      </div>
+            {signIn.isError && (
+              <Alert variant="danger">
+                <AlertDescription>
+                  {signIn.error instanceof Error ? signIn.error.message : t("signIn.rejected")}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <Button type="submit" disabled={!key.trim() || signIn.isPending} className="w-full">
+              {signIn.isPending && <Loader2Icon className="animate-spin" />}
+              {signIn.isPending ? t("signIn.verifying") : t("signIn.continue")}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <p className="max-w-sm text-center text-xs text-muted-foreground">
+        <Trans i18nKey="signIn.footer" components={{ code: <code /> }} />
+      </p>
     </div>
   );
 }

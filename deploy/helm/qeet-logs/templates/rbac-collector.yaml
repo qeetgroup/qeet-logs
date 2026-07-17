@@ -1,0 +1,41 @@
+{{- if .Values.collector.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "qeet-logs.fullname" . }}-collector
+  labels:
+    {{- include "qeet-logs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "qeet-logs.fullname" . }}-collector
+  labels:
+    {{- include "qeet-logs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+rules:
+  # k8sattributes processor: resolve pod/namespace/node metadata.
+  - apiGroups: [""]
+    resources: [pods, namespaces, nodes]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [replicasets, deployments]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "qeet-logs.fullname" . }}-collector
+  labels:
+    {{- include "qeet-logs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "qeet-logs.fullname" . }}-collector
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "qeet-logs.fullname" . }}-collector
+    namespace: {{ .Release.Namespace }}
+{{- end }}

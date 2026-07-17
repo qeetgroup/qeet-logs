@@ -1,0 +1,86 @@
+# Prometheus scrape_config snippets for the Qeet Logs query API /metrics endpoint.
+#
+# The query API (cmd/query) serves RED-style self-metrics on :8100/metrics
+# (see platform/observability/metrics.go). Add ONE of the blocks below to the
+# `scrape_configs:` list of your prometheus.yml, depending on where it runs.
+#
+# Metrics exposed: qeet_logs_http_requests_total{method,route,status},
+# qeet_logs_http_request_duration_seconds{method,route} (histogram),
+# qeet_logs_http_requests_in_flight (gauge), plus go_* / process_* collectors.
+
+scrape_configs:
+  # ── Option A — Docker / bare-metal: scrape the query API directly ───────────
+  - job_name: qeet-logs-query
+    metrics_path: /metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets:
+          - "qeet-logs-query:8100"   # docker-compose service / DNS name
+        labels:
+          service: qeet-logs
+          component: query
+          env: production
+
+  # ── Option B — Kubernetes: discover query pods by annotation ────────────────
+  # The Helm chart's query Deployment pod template already carries:
+  #     prometheus.io/scrape: "true"
+  #     prometheus.io/port:   "8100"
+  #     prometheus.io/path:   /metrics
+  # This job discovers every annotated pod and honours those annotations.
+  - job_name: qeet-logs-query-k8s
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      # keep only pods opting in via prometheus.io/scrape=true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      # scope to the qeet-logs query workload (chart component label)
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        action: keep
+        regex: qeet-logs
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+        action: keep
+        regex: query
+      # use the prometheus.io/path annotation as the metrics path (default /metrics)
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      # rebuild the address from the pod IP + prometheus.io/port annotation
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: "([^:]+)(?::\\d+)?;(\\d+)"
+        replacement: "$1:$2"
+        target_label: __address__
+      # tidy labels
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      - target_label: service
+        replacement: qeet-logs
+      - target_label: component
+        replacement: query
+
+# ── Prometheus Operator alternative ───────────────────────────────────────────
+# If you run kube-prometheus-stack, prefer a PodMonitor over annotation scraping:
+#
+#   apiVersion: monitoring.coreos.com/v1
+#   kind: PodMonitor
+#   metadata:
+#     name: qeet-logs-query
+#     labels: { release: kube-prometheus-stack }
+#   spec:
+#     selector:
+#       matchLabels:
+#         app.kubernetes.io/name: qeet-logs
+#         app.kubernetes.io/component: query
+#     podMetricsEndpoints:
+#       - port: http          # the container port named "http" (8100)
+#         path: /metrics
+#         interval: 15s

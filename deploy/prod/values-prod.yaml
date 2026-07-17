@@ -1,0 +1,144 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Qeet Logs — PRODUCTION Helm values OVERLAY
+# ─────────────────────────────────────────────────────────────────────────────
+# Referenced by docs/ga-release-checklist.md §5:
+#   helm template deploy/helm/qeet-logs -f deploy/prod/values-prod.yaml | less
+#   helm upgrade --install qeet-logs deploy/helm/qeet-logs \
+#       -f deploy/prod/values-prod.yaml --wait
+#
+# This is an OVERLAY on top of deploy/helm/qeet-logs/values.yaml — it only sets
+# what production needs to differ from (or re-assert over) the chart defaults.
+# Everything not mentioned here inherits the chart default.
+#
+# ── Image tags / versioning ──────────────────────────────────────────────────
+# Images default to `.Chart.AppVersion` (Chart.yaml `appVersion`, currently
+# "1.0.0"), pushed as ghcr.io/qeetgroup/qeet-logs-<service>:v<appVersion> by
+# release.yml. The GA cut pins the version by bumping Chart.yaml `appVersion` and
+# tagging `v<appVersion>` — so NO per-service `image.tag` is set here (a floating
+# tag would defeat immutable-per-tag rollbacks). To deploy a specific version
+# without a chart bump, pin explicitly at upgrade time, e.g.:
+#   --set query.image.tag=v1.0.1 --set ingest.image.tag=v1.0.1 ...
+# (The collector image is NOT published by release.yml — leave collector disabled
+#  unless you have built + pushed qeet-logs-collector yourself.)
+
+global:
+  imageRegistry: ghcr.io/qeetgroup
+
+# ─── Query API ────────────────────────────────────────────────────────────────
+# Prod: higher HPA floor/ceiling and larger resource envelope than dev defaults;
+# the query pod fans out to ClickHouse (multi-second cold-tier scans) so give it
+# CPU headroom under burst.
+query:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 65
+
+# ─── Ingest Gateway (Rust) ──────────────────────────────────────────────────
+# Prod: stateless, HPA-scaled hot path. Wider ceiling to absorb ingest bursts;
+# NATS JetStream buffers writer/ClickHouse hiccups behind it.
+ingest:
+  replicaCount: 4
+  resources:
+    requests:
+      cpu: 300m
+      memory: 256Mi
+    limits:
+      cpu: "2"
+      memory: 768Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 4
+    maxReplicas: 40
+    targetCPUUtilizationPercentage: 60
+
+# ─── Alerter (singleton) ──────────────────────────────────────────────────────
+# Must stay a single replica (dedup/absence state is not sharded). Only the
+# resource envelope is nudged for prod.
+alerter:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+# ─── Lifecycle cold-tier mover (singleton) ────────────────────────────────────
+# Exactly one instance; runs the hot→cold partition move on an interval. Enable
+# only once the cold bucket + ClickHouse storage.xml are provisioned (checklist §5).
+lifecycle:
+  enabled: true
+  replicaCount: 1
+  interval: "6h"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+# ─── OTel Collector DaemonSet ─────────────────────────────────────────────────
+# Off in prod unless the custom qeet-logs-collector image has been built + pushed
+# (release.yml does NOT build it) AND INGEST_API_KEY is in the secret.
+collector:
+  enabled: false
+
+# ─── Ingress ──────────────────────────────────────────────────────────────────
+# Public prod hostnames + cert-manager TLS. Query API on api.logs.qeet.in,
+# ingest gateway on ingest.logs.qeet.in.
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Ingest payloads can be large (batched OTLP / write API) — raise the body cap.
+    nginx.ingress.kubernetes.io/proxy-body-size: "32m"
+    # Live-tail is a long-lived WebSocket on the query host.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # HSTS (security sign-off §7).
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Strict-Transport-Security: max-age=63072000; includeSubDomains; preload";
+  hosts:
+    - host: api.logs.qeet.in
+      paths:
+        - path: /
+          pathType: Prefix
+          backend: query
+    - host: ingest.logs.qeet.in
+      paths:
+        - path: /
+          pathType: Prefix
+          backend: ingest
+  tls:
+    - secretName: qeet-logs-tls
+      hosts:
+        - api.logs.qeet.in
+        - ingest.logs.qeet.in
+
+# ─── Secrets ──────────────────────────────────────────────────────────────────
+# Provisioned OUT-OF-BAND (see deploy/prod/secrets.example.yaml). The chart only
+# references this Secret by name and injects its keys via envFrom + explicit
+# secretKeyRefs. QEET_LOGS_SECRETS_KEY is REQUIRED — the query pod will not start
+# without it. Never put real secret values in this overlay.
+secrets:
+  existingSecret: qeet-logs-secrets
+
+# ─── ConfigMap (non-secret config) ────────────────────────────────────────────
+config:
+  env: production
+  clickhouseDatabase: qeet_logs
+  # Per-tenant request cap (requests/minute) on the query surfaces. Non-secret.
+  rateLimitPerMinute: "600"
