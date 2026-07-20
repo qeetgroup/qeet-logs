@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/qeetgroup/qeet-logs/domains/query"
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/domains/query"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
 )
 
 // Node is a service in the graph.

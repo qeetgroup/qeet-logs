@@ -9,9 +9,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qeetgroup/qeet-logs/domains/query"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/domains/query"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
 )
 
 // newEventID returns a random 128-bit hex id for a change event.

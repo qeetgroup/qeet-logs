@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qeetgroup/qeet-logs/domains/query"
+	"github.com/qeetgroup/qeet-logs-server/domains/query"
 )
 
 var testOpts = Options{DefaultLimit: 1000, MaxLimit: 5000}

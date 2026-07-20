@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
 )
 
 // ComputeBaseline returns the rolling mean/std of per-window log counts over the

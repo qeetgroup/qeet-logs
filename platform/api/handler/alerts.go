@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
 )
 
 type alertRuleRow struct {

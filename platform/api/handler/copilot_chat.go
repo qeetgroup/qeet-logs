@@ -11,8 +11,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qeetgroup/qeet-logs/domains/aigateway"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/domains/aigateway"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
 )
 
 // Conversational multi-turn AI Copilot (PRD Module 12.2 / P2-G11). Builds on the

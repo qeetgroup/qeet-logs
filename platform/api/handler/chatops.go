@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/qeetgroup/qeet-logs/domains/chatops"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/domains/chatops"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
 )
 
 // chatopsClient delivers the one-way ChatOps payload to a Slack/Teams

@@ -13,10 +13,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qeetgroup/qeet-logs/domains/grafana"
-	"github.com/qeetgroup/qeet-logs/domains/query"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/domains/grafana"
+	"github.com/qeetgroup/qeet-logs-server/domains/query"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
 )
 
 // Grafana Loki-compatible read data source (PRD Module 22.4). Point a Grafana

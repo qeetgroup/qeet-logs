@@ -25,11 +25,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/qeetgroup/qeet-logs/domains/lifecycle"
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
-	"github.com/qeetgroup/qeet-logs/platform/config"
-	"github.com/qeetgroup/qeet-logs/platform/database"
-	"github.com/qeetgroup/qeet-logs/platform/observability"
+	"github.com/qeetgroup/qeet-logs-server/domains/lifecycle"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/platform/config"
+	"github.com/qeetgroup/qeet-logs-server/platform/database"
+	"github.com/qeetgroup/qeet-logs-server/platform/observability"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"

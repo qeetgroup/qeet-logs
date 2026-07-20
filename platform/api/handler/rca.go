@@ -6,9 +6,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qeetgroup/qeet-logs/domains/rca"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/domains/rca"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
 )
 
 // RCA returns the structural root-cause candidate set for a service (PRD Module

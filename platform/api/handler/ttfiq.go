@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qeetgroup/qeet-logs/domains/ttfiq"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/domains/ttfiq"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
 )
 
 // ttfiqResponse is the JSON summary returned by GET /v1/analytics/ttfiq.

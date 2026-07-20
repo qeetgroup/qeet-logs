@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qeetgroup/qeet-logs/domains/query"
+	"github.com/qeetgroup/qeet-logs-server/domains/query"
 )
 
 // TestLogQLPlusPlusEndToEnd compiles LogQL++ expressions and executes them

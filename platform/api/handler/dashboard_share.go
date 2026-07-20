@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
 )
 
 // ShareDashboard mints (or returns) a stable share token for a dashboard (PRD

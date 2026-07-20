@@ -15,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qeetgroup/qeet-logs/domains/aigateway"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/domains/aigateway"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
 )
 
 // AI Copilot GA — governed LLM gateway (PRD Module 12 / P2-G11).

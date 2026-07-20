@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/qeetgroup/qeet-logs/domains/query"
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/domains/query"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
 )
 
 // Event is one row in the unified feed.

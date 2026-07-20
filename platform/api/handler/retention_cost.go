@@ -9,10 +9,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qeetgroup/qeet-logs/domains/query"
-	"github.com/qeetgroup/qeet-logs/domains/retention"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/domains/query"
+	"github.com/qeetgroup/qeet-logs-server/domains/retention"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
 )
 
 // per-row byte estimates for signals stored as typed columns rather than a raw

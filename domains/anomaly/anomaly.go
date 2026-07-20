@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
 )
 
 // Anomaly is a scored deviation for one (tenant, service).

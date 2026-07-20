@@ -1,4 +1,4 @@
-module github.com/qeetgroup/qeet-logs
+module github.com/qeetgroup/qeet-logs-server
 
 go 1.25.2
 

@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qeetgroup/qeet-logs/domains/buscontext"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/domains/buscontext"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
 )
 
 // buscontext.go serves the Business Context Correlation Layer (PRD Module 16,

@@ -8,8 +8,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
-	"github.com/qeetgroup/qeet-logs/platform/database"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/platform/database"
 )
 
 // createAPIKeyRequest is the JSON body for POST /v1/admin/api-keys.

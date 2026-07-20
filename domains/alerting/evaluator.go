@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
 )
 
 // Evaluate queries ClickHouse and returns the log count within the rule's

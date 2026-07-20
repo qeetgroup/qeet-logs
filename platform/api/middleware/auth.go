@@ -12,8 +12,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qeetgroup/qeet-logs/platform/database"
-	"github.com/qeetgroup/qeet-logs/platform/security"
+	"github.com/qeetgroup/qeet-logs-server/platform/database"
+	"github.com/qeetgroup/qeet-logs-server/platform/security"
 )
 
 type ctxKey int

@@ -17,10 +17,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qeetgroup/qeet-logs/domains/chatops"
-	"github.com/qeetgroup/qeet-logs/domains/query"
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
-	"github.com/qeetgroup/qeet-logs/platform/security"
+	"github.com/qeetgroup/qeet-logs-server/domains/chatops"
+	"github.com/qeetgroup/qeet-logs-server/domains/query"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/platform/security"
 )
 
 // Two-way ChatOps: Slack OAuth app install + slash-commands (PRD Module 19.1 /

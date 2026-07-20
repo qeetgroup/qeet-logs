@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
-	"github.com/qeetgroup/qeet-logs/domains/anomaly"
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/domains/anomaly"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
 )
 
 const (

@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
-	"github.com/qeetgroup/qeet-logs/platform/messaging"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/platform/messaging"
 )
 
 type healthResponse struct {

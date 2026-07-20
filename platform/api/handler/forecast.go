@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/qeetgroup/qeet-logs/domains/forecast"
-	"github.com/qeetgroup/qeet-logs/domains/query"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/domains/forecast"
+	"github.com/qeetgroup/qeet-logs-server/domains/query"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
 )
 
 // forecastMaxBuckets bounds how many trailing time-buckets we pull for the fit

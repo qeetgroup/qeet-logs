@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
 )
 
 // RCAFeedback records an operator label on a retrieved RCA candidate — whether

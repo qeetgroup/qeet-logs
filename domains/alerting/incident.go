@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/qeetgroup/qeet-logs/domains/topology"
-	"github.com/qeetgroup/qeet-logs/domains/webhook"
+	"github.com/qeetgroup/qeet-logs-server/domains/topology"
+	"github.com/qeetgroup/qeet-logs-server/domains/webhook"
 )
 
 // Fingerprint is the correlation key that collapses signals for one service

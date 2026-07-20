@@ -9,8 +9,8 @@ import (
 	"github.com/coder/websocket"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/qeetgroup/qeet-logs/domains/query"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/domains/query"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
 )
 
 // Tail streams matching log records to a WebSocket in real time (PRD Module 05).

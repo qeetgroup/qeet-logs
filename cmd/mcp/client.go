@@ -15,7 +15,7 @@ import (
 const defaultBaseURL = "http://localhost:8100"
 
 // queryClient talks to the qeet-logs query API over HTTP. It mirrors the stdlib
-// net/http style of the Go SDK (github.com/qeetgroup/qeet-logs/sdk/go): a plain
+// net/http style of the Go SDK (github.com/qeetgroup/qeet-logs-server/sdk/go): a plain
 // *http.Client with a 30s timeout, authenticated via the X-Qeet-Api-Key header.
 type queryClient struct {
 	baseURL string

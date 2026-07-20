@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/qeetgroup/qeet-logs/platform/security"
+	"github.com/qeetgroup/qeet-logs-server/platform/security"
 )
 
 // NewAPIKey is the result of creating a scoped API key. The raw Key is returned

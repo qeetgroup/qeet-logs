@@ -17,14 +17,14 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
-	"github.com/qeetgroup/qeet-logs/platform/api/handler"
-	apimw "github.com/qeetgroup/qeet-logs/platform/api/middleware"
-	"github.com/qeetgroup/qeet-logs/platform/cache"
-	"github.com/qeetgroup/qeet-logs/platform/clickhouse"
-	"github.com/qeetgroup/qeet-logs/platform/config"
-	"github.com/qeetgroup/qeet-logs/platform/database"
-	"github.com/qeetgroup/qeet-logs/platform/messaging"
-	"github.com/qeetgroup/qeet-logs/platform/observability"
+	"github.com/qeetgroup/qeet-logs-server/platform/api/handler"
+	apimw "github.com/qeetgroup/qeet-logs-server/platform/api/middleware"
+	"github.com/qeetgroup/qeet-logs-server/platform/cache"
+	"github.com/qeetgroup/qeet-logs-server/platform/clickhouse"
+	"github.com/qeetgroup/qeet-logs-server/platform/config"
+	"github.com/qeetgroup/qeet-logs-server/platform/database"
+	"github.com/qeetgroup/qeet-logs-server/platform/messaging"
+	"github.com/qeetgroup/qeet-logs-server/platform/observability"
 )
 
 // version is overridden at build time via -ldflags.
