@@ -13,7 +13,7 @@ GIT_SHA    := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -X main.version=$(GIT_SHA) -X main.buildTime=$(BUILD_TIME)
 
-.PHONY: help install build dev dev-ingest dev-console dev-alerter dev-lifecycle \
+.PHONY: help install build dev dev-ingest dev-alerter dev-lifecycle \
         test test-integration lint fmt vet ci \
         docker-build compose-prod-up compose-prod-down \
         infra-up infra-down db-reset db-psql \
@@ -22,9 +22,9 @@ LDFLAGS    := -X main.version=$(GIT_SHA) -X main.buildTime=$(BUILD_TIME)
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install Go deps + console JS deps (bun)
+install: ## Install Go deps + root JS tooling (bun)
 	$(GO) mod tidy
-	@if [ -d apps/console ]; then bun install; fi
+	@if [ -f package.json ]; then bun install; fi
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
@@ -46,8 +46,7 @@ dev-alerter: ## Run the alerter engine (cmd/alerter)
 dev-lifecycle: ## Run the cold-tier lifecycle mover (cmd/lifecycle)
 	DATABASE_URL="$(DB_URL)" $(GO) run ./cmd/lifecycle/
 
-dev-console: ## Start the TanStack Start console on :3020 (bun)
-	bun run --filter '@qeet-logs/console' dev
+# The TanStack Start console (:3020) now lives in its own repo: qeet-consoles/qeet-logs-console
 
 # ── Test ─────────────────────────────────────────────────────────────────────
 

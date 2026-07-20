@@ -8,7 +8,7 @@ TAD: [../qeet-files/qeet-logs/Technical_Architecture_Document.md](../qeet-files/
 ## Quick commands
 
 ```bash
-bun install        # apps/console workspace deps (bun — see root package.json)
+bun install        # root JS tooling (biome). The console is now its own repo: qeet-consoles/qeet-logs-console
 cp .env.example .env
 
 make infra-up      # ClickHouse, Postgres, NATS, Redis, MinIO via Docker
@@ -18,7 +18,7 @@ make ch-migrate    # Apply ClickHouse DDL (clickhouse/migrations/*.sql) — M1+
 make dev           # Run query API (cmd/query) on :8100
 make dev-ingest    # Run Rust ingest gateway (needs Rust toolchain) — M2
 make dev-alerter   # Run alerter engine (cmd/alerter) — M6
-make dev-console   # TanStack Start console on :3020 — M7 (bun run --filter '@qeet-logs/console' dev)
+# console (:3020) is now its own repo: qeet-consoles/qeet-logs-console (bun run dev)
 
 make build         # Build all Go binaries to bin/
 make test          # Go unit tests (go vet + go test -race)
@@ -63,8 +63,8 @@ platform/                 Shared infrastructure (no business logic)
 
 migrations/               Postgres golang-migrate pairs (NNNN_*.up/down.sql, immutable)
 clickhouse/migrations/    ClickHouse DDL (logs table, TTL, auth_events) — M1
-apps/console/             TanStack Start + @qeetrix/ui (:3020) — M7 (bun workspace; root package.json)
-                          (SDKs are NOT in-repo — they live in qeet-sdks/qeet-logs-{go,node,react})
+(console)                 TanStack Start + @qeetrix/ui (:3020, M7) — now its own repo:
+                          qeet-consoles/qeet-logs-console  (SDKs likewise: qeet-sdks/qeet-logs-{go,node,react})
 api/openapi/              4 split bounded-context OpenAPI 3.1 specs (ingest/query/admin/operations) — source of truth, no monolith; see api/openapi/README.md
 api/postman/              Postman collection + environment + newman runner (run.sh)
 tools/openapi-split/      split/merge/verify tool for the OpenAPI specs (nested Go module; `cd` in to run)
@@ -94,7 +94,7 @@ deploy/                   docker-compose + Caddyfile + Helm chart + SOC2-CONTROL
 |---|---|
 | query API (cmd/query) | 8100 |
 | ingest gateway (Rust) | 8101 + 4318 (OTLP) |
-| TanStack Start console | 3020 |
+| TanStack Start console (own repo: qeet-consoles/qeet-logs-console) | 3020 |
 | ClickHouse | 8123 (HTTP) / 9100 (native) |
 | PostgreSQL 17 | 5434 |
 | NATS | 4223 / 8223 (monitor) |
@@ -106,7 +106,7 @@ deploy/                   docker-compose + Caddyfile + Helm chart + SOC2-CONTROL
 Building the PRD's **Phase 1 (MVP)** in milestones M0–M9. **ALL MILESTONES COMPLETE (M0–M9)**:
 - M0–M5: foundation, ingest, query, OIDC/RLS, API keys
 - M6: alerter binary (`cmd/alerter`) + threshold/absence engine (`domains/alerting/`) + migration 0005
-- M7: TanStack Start console (`apps/console/`) — bun workspace, dev server :3020 (rebuilt + productionized; 21 routes)
+- M7: TanStack Start console — now its own repo `qeet-consoles/qeet-logs-console` (was `apps/console/`), dev server :3020 (21 routes)
 - M8: Dashboards CRUD (`handler/dashboards.go`) + Saved Searches (`handler/saved_searches.go`) + console routes
 - M9: DLQ table (migration 0006) + DLQ replay API + quota usage API + SDKs (in `qeet-sdks/qeet-logs-{go,node,react}`) + OpenAPI 3.1 specs (`api/openapi/*.yaml`, split by bounded context) + Postman collection (`api/postman/`) + Helm chart (`deploy/helm/`) + SOC 2 control mapping (`deploy/SOC2-CONTROLS.md`)
 

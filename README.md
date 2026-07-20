@@ -34,7 +34,7 @@ Polyglot by design — each layer uses the best-fit stack:
 | Ingestion bus | **NATS JetStream** (`qeet-logs.{tenant}.{logs\|metrics\|traces}`) | `platform/messaging/` |
 | Cache / live-tail fan-out / rate limits | **Redis 7** | `platform/cache/` |
 | Cold tier / archive object store | **S3 / MinIO** | `clickhouse/config/storage.xml` |
-| Console | **TanStack Start + React 19 + @qeetrix/ui** (bun workspace) | `apps/console/` |
+| Console | **TanStack Start + React 19 + @qeetrix/ui** | `qeet-consoles/qeet-logs-console` (own repo) |
 | Auth | **Qeet ID** OIDC (relying party) + scoped `X-Qeet-Api-Key` | `platform/api/middleware/` |
 
 Process topology:
@@ -88,7 +88,7 @@ Other long-running processes:
 ```bash
 make dev-ingest    # Rust ingest gateway on :8101 (+ :4318 OTLP) — needs rustup
 make dev-alerter   # alert/incident engine (cmd/alerter)
-make dev-console   # TanStack Start console on :3020
+# console: now its own repo → qeet-consoles/qeet-logs-console (bun run dev on :3020)
 # cmd/lifecycle (cold-tier mover) and cmd/mcp (MCP server) are run directly via `go run ./cmd/...`
 ```
 
